@@ -3,28 +3,30 @@
 ## Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Docker Network (ai-stack)                │
-│                                                             │
-│  ┌──────────┐    Ollama API     ┌────────────────────────┐  │
-│  │  Ollama   │◄────────────────►│                        │  │
-│  │ :11434    │                  │                        │  │
-│  └──────────┘                  │     Open WebUI          │  │
-│                                │     :3000               │  │
-│  ┌──────────┐   OpenAI API     │                        │  │
-│  │ llama.cpp │◄────────────────►│                        │  │
-│  │ :8081     │   /v1/chat/...  │                        │  │
-│  └──────────┘                  │                        │  │
-│                                │                        │  │
-│  ┌──────────┐   OpenAI API     │                        │  │
-│  │ LiteLLM  │◄────────────────►│                        │  │
-│  │ :4000    │   /v1/chat/...   │                        │  │
-│  └──────────┘                  └────────────────────────┘  │
-│       │                                                     │
-│       │ Anthropic API                                       │
-│       ▼                                                     │
-│  api.anthropic.com                                          │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     Docker Network (ai-stack)                    │
+│                                                                 │
+│  ┌──────────┐    Ollama API     ┌────────────────────────┐      │
+│  │  Ollama   │◄────────────────►│                        │      │
+│  │ :11434    │◄────────┐       │     Open WebUI          │      │
+│  └──────────┘         │       │     :3000               │      │
+│       ▲               │       │                        │      │
+│       │               │       └────────────────────────┘      │
+│       │               │                ▲                       │
+│       │           ┌───┴────────┐       │ OpenAI API            │
+│  ┌────┴─────┐     │  OpenClaw  │       │                       │
+│  │ llama.cpp │     │  :18789   │  ┌────┴──────────┐            │
+│  │ :8081     │     │  (agent)  │  │   LiteLLM     │            │
+│  └──────────┘     └───┬────────┘  │   :4000       │            │
+│       ▲               │           │               │            │
+│       │               └──────────►│  Claude, GPT, │            │
+│       └───────────────────────────│  Gemini       │            │
+│         OpenAI API                └───────┬───────┘            │
+│                                           │                     │
+│                                    api.anthropic.com            │
+│                                    api.openai.com               │
+│                                    generativelanguage.google    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Services
@@ -53,9 +55,19 @@ Unlike Ollama, llama.cpp keeps its model loaded in memory permanently. This mean
 
 ### LiteLLM (port 4000)
 
-A lightweight proxy that translates Anthropic's API into OpenAI-compatible format. This is necessary because Open WebUI expects all non-Ollama backends to speak the OpenAI API protocol, but Anthropic uses its own format.
+A lightweight proxy that translates Anthropic, OpenAI, and Google Gemini APIs into OpenAI-compatible format. This is necessary because Open WebUI and OpenClaw expect backends to speak the OpenAI API protocol.
 
-Configuration is in `litellm-config.yaml`. The Anthropic API key is passed via the `.env` file.
+Configuration is in `litellm-config.yaml`. API keys are passed via the `.env` file. LiteLLM acts as a security boundary — neither Open WebUI nor OpenClaw hold any cloud API keys directly.
+
+### OpenClaw (port 18789)
+
+An autonomous AI agent that can execute tasks, manage files, call APIs, and maintain long-term memory. Unlike Open WebUI (which is a chat interface), OpenClaw acts independently and can perform multi-step workflows.
+
+OpenClaw connects to all model backends through the Docker network: Ollama for local models, llama.cpp for GGUF models, and LiteLLM for cloud models. It holds zero API keys — all cloud access goes through LiteLLM.
+
+The gateway is token-authenticated and bound to localhost only. An `openclaw-cli` service (in the `cli` profile) provides management commands but doesn't auto-start.
+
+Data is stored locally in `openclaw/config/` (agent memory, settings) and `openclaw/workspace/` (files the agent creates).
 
 ### Init Containers
 
@@ -66,13 +78,15 @@ Two one-shot containers run at startup and then exit:
 
 These only do work on first run or when new models are added. On subsequent starts they detect existing files and exit immediately.
 
-## Volumes
+## Volumes and Data
 
-| Volume | Contents | Safe to delete? |
-|---|---|---|
-| `openwebui_data` | User accounts, chat history, settings | No — you lose all UI data |
-| `ollama_data` | Downloaded Ollama models | Yes — models re-download on pull |
-| `llamacpp_models` | Downloaded GGUF files | Yes — re-downloaded by init container |
+| Storage | Type | Contents | Safe to delete? |
+|---|---|---|---|
+| `openwebui_data` | Docker volume | User accounts, chat history, settings | No — you lose all UI data |
+| `ollama_data` | Docker volume | Downloaded Ollama models | Yes — models re-download on pull |
+| `llamacpp_models` | Docker volume | Downloaded GGUF files | Yes — re-downloaded by init container |
+| `openclaw/config/` | Local directory | Agent config, memory, gateway token | No — you lose agent state |
+| `openclaw/workspace/` | Local directory | Files the agent creates | Depends — may contain important work |
 
 ## Networking
 

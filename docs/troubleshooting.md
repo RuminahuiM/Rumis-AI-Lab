@@ -101,6 +101,39 @@ Look for authentication errors. If you see them, verify your `ANTHROPIC_API_KEY`
 
 Make sure all services are on the same network. Check `docker compose ps` — if a service isn't running, the others can't reach it. This is expected for temporarily stopped services.
 
+### "OpenClaw unauthorized" or "disconnected (1008)"
+
+Get a fresh dashboard URL with token:
+```bash
+docker compose run --rm openclaw-cli dashboard --no-open
+```
+
+If you see "pairing required", approve the device:
+```bash
+docker compose run --rm openclaw-cli devices list
+docker compose run --rm openclaw-cli devices approve <requestId>
+```
+
+### "OpenClaw can't reach models"
+
+Check that LiteLLM and Ollama are running:
+```bash
+docker compose ps litellm ollama
+```
+
+Test from inside the OpenClaw container:
+```bash
+docker exec openclaw-gateway curl -s http://litellm:4000/v1/models
+docker exec openclaw-gateway curl -s http://ollama:11434/api/tags
+```
+
+### "Permission denied" on openclaw/config
+
+The container runs as uid 1000. Fix ownership:
+```bash
+sudo chown -R 1000:1000 openclaw/
+```
+
 ---
 
 ## Useful Commands
@@ -124,6 +157,12 @@ nvidia-smi
 # Shell into a container for debugging
 docker exec -it llamacpp bash
 docker exec -it open-webui bash
+docker exec -it openclaw-gateway bash
+
+# OpenClaw CLI commands (on-demand)
+docker compose run --rm openclaw-cli dashboard --no-open
+docker compose run --rm openclaw-cli devices list
+docker compose run --rm openclaw-cli config list
 
 # Check network connectivity between services
 docker exec open-webui curl -s http://llamacpp:8080/v1/models

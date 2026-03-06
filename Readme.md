@@ -1,17 +1,18 @@
-# OpenWebUI Stack
+# AI Suite Stack
 
-A self-contained Docker Compose stack that runs [Open WebUI](https://github.com/open-webui/open-webui) with multiple AI backends: **Ollama** for local models, **llama.cpp** for GGUF models with GPU acceleration, and **Anthropic Claude** via LiteLLM proxy.
+A self-contained Docker Compose stack that combines multiple open-source AI tools into a unified suite: **Open WebUI** for chat, **OpenClaw** for autonomous AI agents, powered by **Ollama**, **llama.cpp**, and cloud APIs (Anthropic Claude, OpenAI GPT, Google Gemini) via **LiteLLM** proxy.
 
-One command to start. All models accessible through a single web interface.
+One command to start. All tools share the same model backends.
 
 ## What's Included
 
 | Service | Purpose | Port |
 |---|---|---|
-| **Open WebUI** | Web interface for all models | `localhost:3000` |
+| **Open WebUI** | Chat interface for all models | `localhost:3000` |
+| **OpenClaw** | Autonomous AI agent (tasks, files, APIs) | `localhost:18789` |
 | **Ollama** | Local model hosting (Llama, Mistral, Gemma, etc.) | `localhost:11434` |
 | **llama.cpp** | GGUF model server with CUDA GPU support | `localhost:8081` |
-| **LiteLLM** | Anthropic Claude API proxy (OpenAI-compatible) | `localhost:4000` |
+| **LiteLLM** | Cloud API proxy (Claude, GPT, Gemini → OpenAI-compatible) | `localhost:4000` |
 
 ## Prerequisites
 
@@ -68,19 +69,38 @@ Go to **http://localhost:3000** and create your admin account. The first user to
 
 All available models appear in the model dropdown. Ollama models show up automatically. llama.cpp and Claude models appear after refreshing connections in Settings → Admin Settings → Connections.
 
+### 5. Set up OpenClaw (one-time)
+
+OpenClaw requires a one-time interactive onboarding:
+
+```bash
+mkdir -p openclaw/config openclaw/workspace
+docker compose up -d openclaw-gateway
+docker compose run --rm openclaw-cli onboard
+```
+
+During onboarding, connect to LiteLLM (`http://litellm:4000/v1`) as your model provider — this gives OpenClaw access to all cloud models without needing any API keys directly. See [OpenClaw Setup](docs/openclaw-setup.md) for the full guide.
+
+Get your dashboard URL: `docker compose run --rm openclaw-cli dashboard --no-open`
+
 ## Project Structure
 
 ```
-OpenWebui-Stack/
+AI-Suite/
 ├── docker-compose.yml      # Stack definition
 ├── .env                    # API keys and secrets (not committed)
-├── litellm-config.yaml     # Anthropic model definitions
+├── litellm-config.yaml     # Cloud model definitions
 ├── llamacpp-start.sh       # Model downloader script
+├── openclaw/
+│   ├── config/             # OpenClaw agent config & memory
+│   └── workspace/          # OpenClaw agent working directory
 └── docs/
-    ├── managing-models.md  # Adding, removing, swapping models
-    ├── gpu-configuration.md # GPU setup and VRAM tuning
-    ├── architecture.md     # How the services connect
-    └── troubleshooting.md  # Common issues and fixes
+    ├── managing-models.md      # Adding, removing, swapping llama.cpp/Ollama models
+    ├── managing-api-models.md  # Configure cloud providers (Claude, GPT, Gemini)
+    ├── openclaw-setup.md       # OpenClaw agent setup and usage
+    ├── gpu-configuration.md    # GPU setup and VRAM tuning
+    ├── architecture.md         # How the services connect
+    └── troubleshooting.md      # Common issues and fixes
 ```
 
 ## Common Operations
@@ -114,6 +134,7 @@ docker compose down -v
 
 - [Managing Models](docs/managing-models.md) — Add, remove, and swap llama.cpp and Ollama models
 - [Managing API Models](docs/managing-api-models.md) — Configure Anthropic, OpenAI, Gemini and other cloud providers
+- [OpenClaw Setup](docs/openclaw-setup.md) — Personal AI agent setup, security, and usage
 - [GPU Configuration](docs/gpu-configuration.md) — NVIDIA setup, VRAM tuning, multi-GPU
 - [Architecture](docs/architecture.md) — How services connect, networking, data flow
 - [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
