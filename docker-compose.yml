@@ -67,7 +67,7 @@ services:
     volumes:
       - llamacpp_models:/models:ro
     environment:
-      LLAMA_ARG_MODEL: "/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+      LLAMA_ARG_MODEL: "/models/gpt-oss-20b-mxfp4.gguf"
       LLAMA_ARG_HOST: "0.0.0.0"
       LLAMA_ARG_PORT: "8080"
       LLAMA_ARG_CTX_SIZE: "0"

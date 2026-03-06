@@ -1,16 +1,16 @@
 ###############################################################################
 # LiteLLM Proxy Configuration
 # ────────────────────────────
-# Translates Anthropic, OpenAI, and Google APIs into OpenAI-compatible format
-# so Open WebUI can use them all.
-#
+# Translates Anthropic, OpenAI, and Google APIs into OpenAI-compatible format.
 # API keys are injected via environment variables from docker-compose.
-# Add or remove models freely — restart litellm to apply changes:
-#   docker compose restart litellm
+#
+# After changes: docker compose restart litellm
+# Last updated: March 2026
 ###############################################################################
 
 model_list:
-  # ── Anthropic Claude ──────────────────────────────────────────────────────
+  # ── Anthropic Claude (current as of March 2026) ───────────────────────────
+  # 4.6 family — latest generation
   - model_name: claude-opus-4.6
     litellm_params:
       model: anthropic/claude-opus-4-6
@@ -21,14 +21,10 @@ model_list:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  - model_name: claude-opus-4
+  # 4.5 family
+  - model_name: claude-opus-4.5
     litellm_params:
-      model: anthropic/claude-opus-4-20250514
-      api_key: os.environ/ANTHROPIC_API_KEY
-
-  - model_name: claude-sonnet-4
-    litellm_params:
-      model: anthropic/claude-sonnet-4-20250514
+      model: anthropic/claude-opus-4-5-20251124
       api_key: os.environ/ANTHROPIC_API_KEY
 
   - model_name: claude-sonnet-4.5
@@ -36,76 +32,64 @@ model_list:
       model: anthropic/claude-sonnet-4-5-20250929
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  - model_name: claude-haiku-3.5
+  - model_name: claude-haiku-4.5
     litellm_params:
-      model: anthropic/claude-3-5-haiku-20241022
+      model: anthropic/claude-haiku-4-5-20251001
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  - model_name: claude-sonnet-3.5
+  # ── OpenAI (current as of March 2026) ─────────────────────────────────────
+  # GPT-5 family — latest generation
+  - model_name: gpt-5.4
     litellm_params:
-      model: anthropic/claude-3-5-sonnet-20241022
-      api_key: os.environ/ANTHROPIC_API_KEY
-
-  # ── OpenAI ────────────────────────────────────────────────────────────────
-  - model_name: gpt-4.1
-    litellm_params:
-      model: openai/gpt-4.1
+      model: openai/gpt-5.4
       api_key: os.environ/OPENAI_API_KEY
 
-  - model_name: gpt-4.1-mini
+  - model_name: gpt-5.4-pro
     litellm_params:
-      model: openai/gpt-4.1-mini
+      model: openai/gpt-5.4-pro
       api_key: os.environ/OPENAI_API_KEY
 
-  - model_name: gpt-4.1-nano
+  - model_name: gpt-5.2
     litellm_params:
-      model: openai/gpt-4.1-nano
+      model: openai/gpt-5.2
       api_key: os.environ/OPENAI_API_KEY
 
-  - model_name: gpt-4o
+  - model_name: gpt-5-mini
     litellm_params:
-      model: openai/gpt-4o
+      model: openai/gpt-5-mini
       api_key: os.environ/OPENAI_API_KEY
 
-  - model_name: gpt-4o-mini
+  - model_name: gpt-5.3-codex
     litellm_params:
-      model: openai/gpt-4o-mini
+      model: openai/gpt-5.3-codex
       api_key: os.environ/OPENAI_API_KEY
 
-  - model_name: o3
+  # ── Google Gemini (current as of March 2026) ──────────────────────────────
+  # 3.x family — latest generation
+  - model_name: gemini-3.1-pro
     litellm_params:
-      model: openai/o3
-      api_key: os.environ/OPENAI_API_KEY
+      model: gemini/gemini-3.1-pro-preview
+      api_key: os.environ/GEMINI_API_KEY
 
-  - model_name: o3-mini
+  - model_name: gemini-3-flash
     litellm_params:
-      model: openai/o3-mini
-      api_key: os.environ/OPENAI_API_KEY
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GEMINI_API_KEY
 
-  - model_name: o4-mini
+  - model_name: gemini-3.1-flash-lite
     litellm_params:
-      model: openai/o4-mini
-      api_key: os.environ/OPENAI_API_KEY
+      model: gemini/gemini-3.1-flash-lite-preview
+      api_key: os.environ/GEMINI_API_KEY
 
-  # ── Google Gemini ─────────────────────────────────────────────────────────
+  # 2.5 family — stable, production-ready
   - model_name: gemini-2.5-pro
     litellm_params:
-      model: gemini/gemini-2.5-pro-preview-06-05
+      model: gemini/gemini-2.5-pro
       api_key: os.environ/GEMINI_API_KEY
 
   - model_name: gemini-2.5-flash
     litellm_params:
-      model: gemini/gemini-2.5-flash-preview-05-20
-      api_key: os.environ/GEMINI_API_KEY
-
-  - model_name: gemini-2.0-flash
-    litellm_params:
-      model: gemini/gemini-2.0-flash
-      api_key: os.environ/GEMINI_API_KEY
-
-  - model_name: gemini-2.0-flash-lite
-    litellm_params:
-      model: gemini/gemini-2.0-flash-lite
+      model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
 
 general_settings:
