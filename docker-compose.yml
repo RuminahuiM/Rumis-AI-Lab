@@ -1,0 +1,188 @@
+services:
+  # ─── Ollama ────────────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - ai-stack
+
+  # ─── Ollama bootstrap – pulls a starter model once ────────────────────────
+  ollama-init:
+    image: curlimages/curl:latest
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      sh -c '
+        echo "Pulling llama3.2:3b ..."
+        curl -sf http://ollama:11434/api/pull -d "{\"name\":\"llama3.2:3b\"}"
+        echo "Done."
+      '
+    restart: "no"
+    networks:
+      - ai-stack
+
+  # ─── llama.cpp model downloader (runs once, then exits) ───────────────────
+  llamacpp-init:
+    image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+    container_name: llamacpp-init
+    volumes:
+      - llamacpp_models:/models
+      - ./llamacpp-start.sh:/start.sh:ro
+    environment:
+      HF_TOKEN: "${HF_TOKEN:-}"
+    entrypoint: ["bash", "/start.sh"]
+    restart: "no"
+    networks:
+      - ai-stack
+
+  # ─── llama.cpp server (gpt-oss-20b) ──────────────────────────────────────
+  # Uses official CUDA image = full GPU support.
+  # To add another model: duplicate this service, change the name/port/model.
+  llamacpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llamacpp
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - llamacpp_models:/models:ro
+    environment:
+      LLAMA_ARG_MODEL: "/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+      LLAMA_ARG_HOST: "0.0.0.0"
+      LLAMA_ARG_PORT: "8080"
+      LLAMA_ARG_CTX_SIZE: "0"
+      LLAMA_ARG_N_GPU_LAYERS: "28"
+      LLAMA_ARG_THREADS: "4"
+      LLAMA_ARG_JINJA: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      llamacpp-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - ai-stack
+
+  # ─── TEMPLATE: add more llama.cpp models by duplicating the block above ──
+  # llamacpp-glm5:
+  #   image: ghcr.io/ggml-org/llama.cpp:server-cuda
+  #   container_name: llamacpp-glm5
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8082:8080"
+  #   volumes:
+  #     - llamacpp_models:/models:ro
+  #   environment:
+  #     LLAMA_ARG_MODEL: "/models/your-glm5-model.gguf"
+  #     LLAMA_ARG_HOST: "0.0.0.0"
+  #     LLAMA_ARG_PORT: "8080"
+  #     LLAMA_ARG_CTX_SIZE: "0"
+  #     LLAMA_ARG_N_GPU_LAYERS: "28"
+  #     LLAMA_ARG_THREADS: "4"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   depends_on:
+  #     llamacpp-init:
+  #       condition: service_completed_successfully
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 120s
+  #   networks:
+  #     - ai-stack
+
+  # ─── LiteLLM Proxy – translates Anthropic API → OpenAI-compatible ────────
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: >
+      --config /app/config.yaml
+      --host 0.0.0.0
+      --port 4000
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ai-stack
+
+  # ─── Open WebUI ───────────────────────────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      OLLAMA_BASE_URLS: "http://ollama:11434"
+      ENABLE_OLLAMA_API: "true"
+      # Add more llamacpp endpoints separated by semicolons as you add models
+      OPENAI_API_BASE_URLS: "http://llamacpp:8080/v1;http://litellm:4000/v1"
+      OPENAI_API_KEYS: "sk-no-key-needed;sk-no-key-needed"
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "true"
+      HF_TOKEN: "${HF_TOKEN:-}"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - ai-stack
+
+volumes:
+  ollama_data:
+  openwebui_data:
+  llamacpp_models:
+
+networks:
+  ai-stack:
+    driver: bridge
