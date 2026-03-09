@@ -1,1 +1,9 @@
 .env
+
+# Let's Encrypt certificates (contain private keys – never commit)
+certbot/conf/
+certbot/www/
+
+# OpenClaw runtime data (tokens, memory, workspace files)
+openclaw/config/
+openclaw/workspace/
