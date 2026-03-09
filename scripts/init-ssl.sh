@@ -18,6 +18,8 @@ fi
 OUI_DOMAIN="${OUI_DOMAIN:?'OUI_DOMAIN is not set. Add it to your .env file (e.g. OUI_DOMAIN=oui.mydomain.ch)'}"
 OC_DOMAIN="${OC_DOMAIN:?'OC_DOMAIN is not set. Add it to your .env file (e.g. OC_DOMAIN=oc.mydomain.ch)'}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:?'CERTBOT_EMAIL is not set. Add it to your .env file (e.g. CERTBOT_EMAIL=you@example.com)'}"
+OC_AUTH_USER="${OC_AUTH_USER:?'OC_AUTH_USER is not set. Add it to your .env file (e.g. OC_AUTH_USER=admin)'}"
+OC_AUTH_PASSWORD="${OC_AUTH_PASSWORD:?'OC_AUTH_PASSWORD is not set. Add it to your .env file (e.g. OC_AUTH_PASSWORD=yourpassword)'}"
 
 echo "==========================================================================
   Rumis AI Lab – SSL bootstrap
@@ -27,7 +29,14 @@ echo "==========================================================================
 =========================================================================="
 
 # ── Ensure directories exist ──────────────────────────────────────────────────
-mkdir -p nginx/conf.d certbot/www certbot/conf
+mkdir -p nginx/conf.d nginx/auth certbot/www certbot/conf
+
+# ── Generate OpenClaw htpasswd (nginx basic auth) ─────────────────────────────
+echo "   Generating OpenClaw basic-auth credentials..."
+HASH=$(openssl passwd -apr1 "${OC_AUTH_PASSWORD}")
+printf '%s:%s\n' "${OC_AUTH_USER}" "${HASH}" > nginx/auth/openclaw.htpasswd
+chmod 600 nginx/auth/openclaw.htpasswd
+echo "   htpasswd written to nginx/auth/openclaw.htpasswd (user: ${OC_AUTH_USER})"
 
 # ── Step 1: write HTTP-only nginx config (needed for ACME challenge) ──────────
 echo ""
@@ -178,6 +187,11 @@ server {
     add_header Content-Security-Policy   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' wss: https: ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self';" always;
 
     client_max_body_size 20M;
+
+    # Basic auth – first line of defence before OpenClaw's own token auth.
+    # Credentials set via OC_AUTH_USER / OC_AUTH_PASSWORD in .env.
+    auth_basic           "OpenClaw";
+    auth_basic_user_file /etc/nginx/auth/openclaw.htpasswd;
 
     location / {
         proxy_pass         http://openclaw-gateway:18789;

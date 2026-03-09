@@ -155,7 +155,6 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
-      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set in .env}"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
       interval: 15s
@@ -184,11 +183,9 @@ services:
       ENABLE_OLLAMA_API: "true"
       # Add more llamacpp endpoints separated by semicolons as you add models
       OPENAI_API_BASE_URLS: "http://llamacpp:8080/v1;http://litellm:4000/v1"
-      # Keys must match the order of OPENAI_API_BASE_URLS.
-      # llamacpp has no auth; litellm requires LITELLM_MASTER_KEY.
-      OPENAI_API_KEYS: "sk-no-key-needed;${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set in .env}"
+      OPENAI_API_KEYS: "sk-no-key-needed;sk-no-key-needed"
       WEBUI_AUTH: "true"
-      ENABLE_SIGNUP: "true"
+      ENABLE_SIGNUP: "false"  # invite-only; admin adds users via Settings → Admin → Users
       HF_TOKEN: "${HF_TOKEN:-}"
     depends_on:
       ollama:
@@ -249,6 +246,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/auth:/etc/nginx/auth:ro   # htpasswd files for basic auth
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:

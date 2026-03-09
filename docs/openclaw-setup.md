@@ -111,8 +111,8 @@ llama.cpp models are accessible via their OpenAI-compatible API at `http://llama
 
 This setup follows security best practices:
 
-- **No raw API keys in OpenClaw** — all cloud access goes through LiteLLM as an authenticated proxy on the internal network
-- **LiteLLM master key** — LiteLLM requires `LITELLM_MASTER_KEY` for every request; OpenClaw must present this key
+- **No raw API keys in OpenClaw** — all cloud access goes through LiteLLM as a proxy on the internal network
+- **Nginx basic auth on `oc.<domain>`** — a username/password (set in `.env` as `OC_AUTH_USER`/`OC_AUTH_PASSWORD`) is required before the request even reaches OpenClaw; combined with OpenClaw's own gateway token this gives two independent auth layers
 - **Segmented Docker networks** — nginx can only reach OpenClaw and Open WebUI; it cannot directly reach Ollama, llama.cpp, or LiteLLM
 - **Token-authenticated Web UI** — the dashboard requires a gateway token, not accessible without it
 - **Port bound to localhost** — `127.0.0.1:18789` prevents access from other devices on your network
