@@ -93,5 +93,7 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
 
 general_settings:
-  master_key: null
+  # master_key gates all proxy requests. Set LITELLM_MASTER_KEY in your .env.
+  # Without this, anyone on the Docker network can burn your API keys for free.
+  master_key: os.environ/LITELLM_MASTER_KEY
   drop_params: true

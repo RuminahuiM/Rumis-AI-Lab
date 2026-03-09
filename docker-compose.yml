@@ -5,7 +5,7 @@ services:
     container_name: ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"  # localhost-only; no auth → never expose publicly
     volumes:
       - ollama_data:/root/.ollama
     deploy:
@@ -21,8 +21,13 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── Ollama bootstrap – pulls a starter model once ────────────────────────
   ollama-init:
@@ -39,7 +44,7 @@ services:
       '
     restart: "no"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── llama.cpp model downloader (runs once, then exits) ───────────────────
   llamacpp-init:
@@ -53,7 +58,7 @@ services:
     entrypoint: ["bash", "/start.sh"]
     restart: "no"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── llama.cpp server (gpt-oss-20b) ──────────────────────────────────────
   # Uses official CUDA image = full GPU support.
@@ -63,7 +68,7 @@ services:
     container_name: llamacpp
     restart: unless-stopped
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"  # localhost-only; no auth → never expose publicly
     volumes:
       - llamacpp_models:/models:ro
     environment:
@@ -90,8 +95,13 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── TEMPLATE: add more llama.cpp models by duplicating the block above ──
   # llamacpp-glm5:
@@ -99,7 +109,7 @@ services:
   #   container_name: llamacpp-glm5
   #   restart: unless-stopped
   #   ports:
-  #     - "8082:8080"
+  #     - "127.0.0.1:8082:8080"
   #   volumes:
   #     - llamacpp_models:/models:ro
   #   environment:
@@ -126,7 +136,7 @@ services:
   #     retries: 5
   #     start_period: 120s
   #   networks:
-  #     - ai-stack
+  #     - backend-net
 
   # ─── LiteLLM Proxy – translates Anthropic API → OpenAI-compatible ────────
   litellm:
@@ -134,7 +144,7 @@ services:
     container_name: litellm
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"  # localhost-only; auth via LITELLM_MASTER_KEY
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: >
@@ -145,14 +155,20 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set in .env}"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── Open WebUI ───────────────────────────────────────────────────────────
   open-webui:
@@ -168,15 +184,23 @@ services:
       ENABLE_OLLAMA_API: "true"
       # Add more llamacpp endpoints separated by semicolons as you add models
       OPENAI_API_BASE_URLS: "http://llamacpp:8080/v1;http://litellm:4000/v1"
-      OPENAI_API_KEYS: "sk-no-key-needed;sk-no-key-needed"
+      # Keys must match the order of OPENAI_API_BASE_URLS.
+      # llamacpp has no auth; litellm requires LITELLM_MASTER_KEY.
+      OPENAI_API_KEYS: "sk-no-key-needed;${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set in .env}"
       WEBUI_AUTH: "true"
       ENABLE_SIGNUP: "true"
       HF_TOKEN: "${HF_TOKEN:-}"
     depends_on:
       ollama:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - frontend-net
+      - backend-net
 
   # ─── OpenClaw Gateway ──────────────────────────────────────────────────────
   # Personal AI agent. Requires one-time onboarding, see docs/openclaw-setup.md
@@ -204,8 +228,14 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - frontend-net
+      - backend-net
 
   # ─── Nginx – SSL termination & reverse proxy ─────────────────────────────
   # Routes oui.<domain> → open-webui and oc.<domain> → openclaw-gateway.
@@ -224,10 +254,17 @@ services:
     depends_on:
       - open-webui
       - openclaw-gateway
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - frontend-net
 
   # ─── Certbot – auto-renews Let's Encrypt certificates every 12 h ─────────
+  # No internal network needed: only requires internet access (Let's Encrypt)
+  # and the shared certbot volumes.
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
@@ -236,6 +273,11 @@ services:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
     entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   # ─── OpenClaw CLI (management, runs on-demand only) ───────────────────────
   openclaw-cli:
@@ -268,5 +310,10 @@ volumes:
   llamacpp_models:
 
 networks:
-  ai-stack:
+  # Public-facing tier: nginx ↔ open-webui ↔ openclaw-gateway
+  frontend-net:
+    driver: bridge
+  # Internal AI tier: webuis ↔ ollama / llamacpp / litellm
+  # nginx cannot reach backend services directly
+  backend-net:
     driver: bridge

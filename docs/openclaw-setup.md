@@ -58,8 +58,8 @@ The wizard will ask you to configure:
 
 - **Agent name** — give your agent a name and personality
 - **Model provider** — choose "OpenAI-compatible" and enter:
-  - API URL: `http://localhost:4000/v1` (this reaches LiteLLM inside the Docker network)
-  - API Key: `sk-no-key-needed`
+  - API URL: `http://litellm:4000/v1` (internal Docker hostname)
+  - API Key: your `LITELLM_MASTER_KEY` value from `.env`
   - Model: pick any model name from your LiteLLM config (e.g. `claude-opus-4.6`)
 - **Ollama** — if prompted, enter `http://localhost:11434` for local models
 
@@ -94,7 +94,7 @@ OpenClaw reaches all cloud models (Claude, GPT, Gemini) through LiteLLM at `http
 
 To configure this inside OpenClaw, set up an OpenAI-compatible provider:
 - Base URL: `http://litellm:4000/v1`
-- API Key: `sk-no-key-needed`
+- API Key: your `LITELLM_MASTER_KEY` value from `.env` (LiteLLM now requires auth)
 - Available models: all models listed in `litellm-config.yaml`
 
 ### Local models via Ollama
@@ -103,7 +103,7 @@ OpenClaw can connect directly to Ollama at `http://ollama:11434`. Models you've 
 
 ### Local models via llama.cpp
 
-llama.cpp models are accessible via their OpenAI-compatible API at `http://llamacpp:8080/v1` (or whichever port your llamacpp service uses). API key: `sk-no-key-needed`.
+llama.cpp models are accessible via their OpenAI-compatible API at `http://llamacpp:8080/v1` (or whichever port your llamacpp service uses). API key: `sk-no-key-needed` (llama.cpp has no auth; it is only reachable on the internal Docker network).
 
 ---
 
@@ -111,7 +111,9 @@ llama.cpp models are accessible via their OpenAI-compatible API at `http://llama
 
 This setup follows security best practices:
 
-- **No API keys in OpenClaw** — all cloud access goes through LiteLLM as a proxy on the internal network
+- **No raw API keys in OpenClaw** — all cloud access goes through LiteLLM as an authenticated proxy on the internal network
+- **LiteLLM master key** — LiteLLM requires `LITELLM_MASTER_KEY` for every request; OpenClaw must present this key
+- **Segmented Docker networks** — nginx can only reach OpenClaw and Open WebUI; it cannot directly reach Ollama, llama.cpp, or LiteLLM
 - **Token-authenticated Web UI** — the dashboard requires a gateway token, not accessible without it
 - **Port bound to localhost** — `127.0.0.1:18789` prevents access from other devices on your network
 - **Non-root container** — runs as `node` user (uid 1000)

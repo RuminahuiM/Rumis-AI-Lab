@@ -137,9 +137,12 @@ server {
     add_header X-Frame-Options           "SAMEORIGIN"   always;
     add_header X-Content-Type-Options    "nosniff"      always;
     add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    # CSP: allows Open WebUI's inline scripts/styles, WebSockets, blobs, and images from anywhere.
+    # unsafe-inline/eval are required by the Open WebUI SPA.
+    add_header Content-Security-Policy   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' wss: https: ws:; font-src 'self' data:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self';" always;
 
-    # Allow large uploads (model files, documents, images)
-    client_max_body_size 500M;
+    # Allow uploads up to 100 MB (documents, images). Raise if you need larger files.
+    client_max_body_size 100M;
 
     location / {
         proxy_pass         http://open-webui:8080;
@@ -172,6 +175,7 @@ server {
     add_header X-Frame-Options           "SAMEORIGIN"   always;
     add_header X-Content-Type-Options    "nosniff"      always;
     add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' wss: https: ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self';" always;
 
     client_max_body_size 20M;
 
