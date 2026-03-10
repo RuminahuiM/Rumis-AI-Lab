@@ -33,11 +33,14 @@ All other ports (3000, 4000, 11434, 8081, 18789) are **not exposed** to the inte
 
 ### Recommended instance type
 
-| Workload | Instance | vCPU | RAM | Notes |
-|----------|----------|------|-----|-------|
-| CPU-only | `t3.xlarge` | 4 | 16 GB | Cheapest viable option |
-| GPU (local models) | `g4dn.xlarge` | 4 | 16 GB | 1× NVIDIA T4 (16 GB VRAM) |
-| GPU (larger models) | `g4dn.2xlarge` | 8 | 32 GB | Better for 20B+ models |
+The Lite AWS setup runs cloud API models only (no local models) so it needs minimal resources.
+
+| Workload | Instance | vCPU | RAM | ~Cost | Notes |
+|----------|----------|------|-----|-------|-------|
+| **Lite AWS (recommended)** | `t3.small` | 2 | 2 GB | ~$15/mo | API-only, no local models |
+| Lite AWS (headroom) | `t3.medium` | 2 | 4 GB | ~$30/mo | Extra RAM for heavy Open WebUI usage |
+
+> For GPU-powered local models, use the [Custom Server](setup-custom-server.md) or [Hybrid](setup-hybrid.md) setup instead.
 
 ### AMI
 
@@ -45,7 +48,7 @@ Use **Ubuntu 24.04 LTS** (search for `ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.
 
 ### Storage
 
-Add at least **100 GB** of gp3 EBS storage (models are large).
+**20 GB** of gp3 EBS is enough for Lite AWS (no local models to store). Increase to 50+ GB if you plan to add local models later.
 
 ### Security Group
 
@@ -199,7 +202,7 @@ SSL setup complete!
 docker compose up -d
 ```
 
-This starts: ollama, llamacpp, litellm, open-webui, openclaw-gateway, nginx, certbot.
+This starts: litellm, open-webui, openclaw-gateway, nginx, certbot. (Ollama and llama.cpp are in the `local-models` profile and won't start — see [Custom Server](setup-custom-server.md) if you need local models.)
 
 Check everything is running:
 
@@ -261,8 +264,8 @@ docker compose up -d
 - [x] `certbot/conf/` is in `.gitignore` (private keys never committed)
 - [x] HSTS is enabled with a 2-year max-age
 - [x] TLS 1.2+ only (no TLS 1.0/1.1)
-- [ ] Enable Open WebUI user registration controls (Admin → Settings → Users)
-- [ ] Consider setting `ENABLE_SIGNUP=false` after creating your accounts
+- [x] `ENABLE_SIGNUP=false` — new user self-registration is disabled by default
+- [ ] After creating your admin account, verify no other users exist (Admin → Settings → Users)
 
 ### Optional: automatic security updates
 
@@ -300,7 +303,7 @@ docker compose exec nginx nginx -s reload
 
 ### Open WebUI returns 502 Bad Gateway
 
-The `open-webui` container may still be starting (it waits for Ollama):
+The `open-webui` container may still be starting (it waits for LiteLLM to be healthy):
 ```bash
 docker compose ps
 docker compose logs open-webui

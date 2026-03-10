@@ -165,7 +165,7 @@ services:
     container_name: litellm
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"  # localhost-only; auth via LITELLM_MASTER_KEY
+      - "127.0.0.1:4000:4000"  # localhost-only; no auth (internal network only)
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: >
@@ -173,9 +173,9 @@ services:
       --host 0.0.0.0
       --port 4000
     environment:
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
       interval: 15s

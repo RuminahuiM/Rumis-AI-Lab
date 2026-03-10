@@ -30,6 +30,9 @@ echo "==========================================================================
 
 # ── Ensure directories exist ──────────────────────────────────────────────────
 mkdir -p nginx/conf.d nginx/auth certbot/www certbot/conf
+mkdir -p openclaw/config openclaw/workspace
+# OpenClaw runs as uid 1000 (node user) — fix ownership so it can write config.
+chown -R 1000:1000 openclaw/ 2>/dev/null || true
 
 # ── Generate OpenClaw htpasswd (nginx basic auth) ─────────────────────────────
 echo "   Generating OpenClaw basic-auth credentials..."
