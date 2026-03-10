@@ -1,0 +1,117 @@
+###############################################################################
+# LiteLLM – Hybrid AWS Setup
+# ───────────────────────────
+# Used when Open WebUI / OpenClaw run on AWS Lite but local models live on a
+# separate GPU server (your own hardware or a rented GPU box).
+#
+# Prerequisites:
+#   • The remote GPU server must expose Ollama and/or llama.cpp over HTTPS.
+#     See docs/setup-hybrid.md for how to set that up.
+#   • Set REMOTE_GPU_HOST in your .env:
+#       REMOTE_GPU_HOST=https://gpu.yourdomain.com
+#
+# To activate: update docker-compose.yml litellm service to mount this file:
+#   volumes:
+#     - ./litellm-config.hybrid.yaml:/app/config.yaml:ro
+#
+# After changes: docker compose restart litellm
+# Last updated: March 2026
+###############################################################################
+
+model_list:
+  # ── Anthropic Claude (current as of March 2026) ───────────────────────────
+  - model_name: claude-opus-4.6
+    litellm_params:
+      model: anthropic/claude-opus-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-sonnet-4.6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-opus-4.5
+    litellm_params:
+      model: anthropic/claude-opus-4-5-20251124
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-sonnet-4.5
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku-4.5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ── OpenAI (current as of March 2026) ─────────────────────────────────────
+  - model_name: gpt-5.4
+    litellm_params:
+      model: openai/gpt-5.4
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-5.4-pro
+    litellm_params:
+      model: openai/gpt-5.4-pro
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-5.2
+    litellm_params:
+      model: openai/gpt-5.2
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-5.3-codex
+    litellm_params:
+      model: openai/gpt-5.3-codex
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ── Google Gemini (current as of March 2026) ──────────────────────────────
+  - model_name: gemini-3.1-pro
+    litellm_params:
+      model: gemini/gemini-3.1-pro-preview
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: gemini-3-flash
+    litellm_params:
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ── Remote GPU Server – Ollama ────────────────────────────────────────────
+  # Reaches the Ollama instance running on your remote GPU server via HTTPS.
+  # The GPU server must have nginx proxying /ollama → ollama:11434.
+  # Set REMOTE_GPU_HOST=https://gpu.yourdomain.com in your AWS .env.
+  - model_name: llama3.2:3b
+    litellm_params:
+      model: ollama/llama3.2:3b
+      api_base: "${REMOTE_GPU_HOST}/ollama"
+
+  # Add more remote Ollama models here as you pull them on the GPU server.
+
+  # ── Remote GPU Server – llama.cpp ─────────────────────────────────────────
+  # Reaches the llama.cpp instance running on your remote GPU server via HTTPS.
+  # The GPU server must have nginx proxying /llamacpp → llamacpp:8080.
+  - model_name: gpt-oss-20b
+    litellm_params:
+      model: openai/gpt-oss-20b
+      api_base: "${REMOTE_GPU_HOST}/llamacpp/v1"
+      api_key: sk-no-key-needed
+
+general_settings:
+  master_key: null
+  drop_params: true

@@ -1,0 +1,250 @@
+# =============================================================================
+# Local Full Setup – LAN-accessible, no SSL, local models + cloud APIs
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.local.yml up -d
+#   bash scripts/up-local.sh   ← shortcut
+#
+# Differences from the default docker-compose.yml (Lite AWS):
+#   • All ports bind to 0.0.0.0  → reachable from any device on your LAN
+#   • No nginx, no certbot        → plain HTTP, no SSL needed on a LAN
+#   • Ollama + llama.cpp included → local model hosting (GPU recommended)
+#   • Uses litellm-config.local.yaml → adds local model endpoints to LiteLLM
+#
+# Access after startup:
+#   Open WebUI  →  http://<lan-ip>:3000
+#   OpenClaw    →  http://<lan-ip>:18789
+#   LiteLLM     →  http://<lan-ip>:4000    (optional, internal use)
+#
+# Find your LAN IP: hostname -I | awk '{print $1}'
+# =============================================================================
+
+services:
+  # ─── Ollama ────────────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:11434"   # LAN-accessible
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - backend-net
+
+  # ─── Ollama bootstrap – pulls a starter model once ─────────────────────────
+  ollama-init:
+    image: curlimages/curl:latest
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      sh -c '
+        echo "Pulling llama3.2:3b ..."
+        curl -sf http://ollama:11434/api/pull -d "{\"name\":\"llama3.2:3b\"}"
+        echo "Done."
+      '
+    restart: "no"
+    networks:
+      - backend-net
+
+  # ─── llama.cpp model downloader (runs once, then exits) ────────────────────
+  llamacpp-init:
+    image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+    container_name: llamacpp-init
+    volumes:
+      - llamacpp_models:/models
+      - ./llamacpp-start.sh:/start.sh:ro
+    environment:
+      HF_TOKEN: "${HF_TOKEN:-}"
+    entrypoint: ["bash", "/start.sh"]
+    restart: "no"
+    networks:
+      - backend-net
+
+  # ─── llama.cpp server ──────────────────────────────────────────────────────
+  llamacpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llamacpp
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8081:8080"   # LAN-accessible
+    volumes:
+      - llamacpp_models:/models:ro
+    environment:
+      LLAMA_ARG_MODEL: "/models/gpt-oss-20b-mxfp4.gguf"
+      LLAMA_ARG_HOST: "0.0.0.0"
+      LLAMA_ARG_PORT: "8080"
+      LLAMA_ARG_CTX_SIZE: "0"
+      LLAMA_ARG_N_GPU_LAYERS: "28"
+      LLAMA_ARG_THREADS: "4"
+      LLAMA_ARG_JINJA: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      llamacpp-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - backend-net
+
+  # ─── LiteLLM Proxy ─────────────────────────────────────────────────────────
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:4000:4000"   # LAN-accessible (optional)
+    volumes:
+      - ./litellm-config.local.yaml:/app/config.yaml:ro
+    command: >
+      --config /app/config.yaml
+      --host 0.0.0.0
+      --port 4000
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - backend-net
+
+  # ─── Open WebUI ─────────────────────────────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:3000:8080"   # LAN-accessible
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      OLLAMA_BASE_URLS: "http://ollama:11434"
+      ENABLE_OLLAMA_API: "true"
+      OPENAI_API_BASE_URLS: "http://llamacpp:8080/v1;http://litellm:4000/v1"
+      OPENAI_API_KEYS: "sk-no-key-needed;sk-no-key-needed"
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "false"
+      HF_TOKEN: "${HF_TOKEN:-}"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - frontend-net
+      - backend-net
+
+  # ─── OpenClaw Gateway ───────────────────────────────────────────────────────
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:18789:18789"   # LAN-accessible
+    volumes:
+      - ./openclaw/config:/home/node/.openclaw
+      - ./openclaw/workspace:/home/node/.openclaw/workspace
+    environment:
+      NODE_ENV: production
+    command:
+      ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - frontend-net
+      - backend-net
+
+  # ─── OpenClaw CLI (on-demand) ───────────────────────────────────────────────
+  openclaw-cli:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-cli
+    volumes:
+      - ./openclaw/config:/home/node/.openclaw
+      - ./openclaw/workspace:/home/node/.openclaw/workspace
+    environment:
+      NODE_ENV: production
+      BROWSER: "echo"
+    stdin_open: true
+    tty: true
+    entrypoint: ["node", "dist/index.js"]
+    network_mode: "service:openclaw-gateway"
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - cli
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+
+volumes:
+  ollama_data:
+  openwebui_data:
+  llamacpp_models:
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge

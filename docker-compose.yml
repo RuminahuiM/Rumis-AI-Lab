@@ -1,3 +1,16 @@
+# =============================================================================
+# Lite AWS Setup – cloud API models only, HTTPS via nginx + Let's Encrypt
+# =============================================================================
+# This is the default compose file for the Lite AWS deployment.
+# For other setups, use:
+#   Local Full (LAN):       docker compose -f docker-compose.local.yml up -d
+#   Custom Hosted Server:   docker compose -f docker-compose.server.yml up -d
+#   Hybrid AWS + GPU:       use this file with litellm-config.hybrid.yaml
+#                           (see docs/setup-hybrid.md)
+#
+# First-time AWS setup: bash scripts/init-ssl.sh   (generates SSL certs)
+# =============================================================================
+
 services:
   # ─── Ollama ────────────────────────────────────────────────────────────────
   # Profile: local-models  →  only starts when you run:

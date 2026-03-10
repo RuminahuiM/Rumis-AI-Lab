@@ -1,156 +1,154 @@
-# AI Suite Stack
+# Rumis AI Lab
 
-A self-contained Docker Compose stack that combines multiple open-source AI tools into a unified suite: **Open WebUI** for chat, **OpenClaw** for autonomous AI agents, powered by **Ollama**, **llama.cpp**, and cloud APIs (Anthropic Claude, OpenAI GPT, Google Gemini) via **LiteLLM** proxy.
+A modular Docker Compose AI suite. Mix and match local models, cloud APIs, and deployment targets to fit your setup.
 
-One command to start. All tools share the same model backends.
+**Core services:** Open WebUI (chat), OpenClaw (autonomous AI agent), LiteLLM (cloud API proxy), Ollama, llama.cpp.
+
+---
+
+## Choose Your Setup
+
+| Setup | Where it runs | Local models | HTTPS | Start command |
+|---|---|---|---|---|
+| [**Local Full**](docs/setup-local.md) | Your machine / LAN | Yes (GPU rec.) | No (LAN only) | `bash scripts/up-local.sh` |
+| [**Custom Server**](docs/setup-custom-server.md) | Own / rented server | Yes (GPU rec.) | Yes (Let's Encrypt or BYO) | `docker compose -f docker-compose.server.yml up -d` |
+| [**Lite AWS**](docs/aws-ssl-setup.md) | AWS EC2 (t3.small) | No | Yes (Let's Encrypt) | `docker compose up -d` |
+| [**Hybrid AWS**](docs/setup-hybrid.md) | AWS + separate GPU server | On GPU server | Yes (both sides) | `docker compose up -d` + hybrid config |
+
+**Not sure which to pick?**
+- Testing quickly or personal LAN use → **Local Full**
+- Public-facing, own hardware → **Custom Server**
+- Just cloud APIs, minimal ops → **Lite AWS**
+- Cheap hosting + powerful local models → **Hybrid AWS**
+
+---
 
 ## What's Included
 
-| Service | Purpose | Port |
+| Service | Purpose | Default port |
 |---|---|---|
-| **Open WebUI** | Chat interface for all models | `localhost:3000` |
-| **OpenClaw** | Autonomous AI agent (tasks, files, APIs) | `localhost:18789` |
-| **Ollama** | Local model hosting (Llama, Mistral, Gemma, etc.) | `localhost:11434` |
-| **llama.cpp** | GGUF model server with CUDA GPU support | `localhost:8081` |
-| **LiteLLM** | Cloud API proxy (Claude, GPT, Gemini → OpenAI-compatible) | `localhost:4000` |
+| **Open WebUI** | Chat interface for all models | `3000` |
+| **OpenClaw** | Autonomous AI agent (tasks, files, APIs) | `18789` |
+| **LiteLLM** | Cloud API proxy (Claude, GPT, Gemini → OpenAI-compatible) | `4000` |
+| **Ollama** | Local model hosting (Llama, Mistral, Gemma, etc.) | `11434` |
+| **llama.cpp** | GGUF model server with CUDA GPU support | `8081` |
+| **nginx** | SSL termination + reverse proxy | `80` / `443` |
+| **certbot** | Auto-renews Let's Encrypt certificates | — |
 
-## Prerequisites
+Ports are `127.0.0.1`-bound in cloud/server setups (nginx handles public access). Ports are `0.0.0.0`-bound in the Local Full setup (LAN access).
 
-- **Docker Desktop** with WSL2 backend (Windows) or Docker Engine (Linux)
-- **NVIDIA GPU** with drivers installed (optional but recommended)
-- **Anthropic API key** from [console.anthropic.com](https://console.anthropic.com/settings/keys)
-- **HuggingFace token** (free) from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+---
 
-## Quick Start
-
-### 1. Clone and configure
+## Quick Start (Local Full)
 
 ```bash
-git clone <your-repo-url>
-cd OpenWebui-Stack
-```
-
-Edit `.env` and add your API keys:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-HF_TOKEN=hf_your-token-here
-```
-
-### 2. Add a model for llama.cpp (optional)
-
-Edit `llamacpp-start.sh` and add your model to the `MODELS` array:
-
-```bash
-MODELS=(
-  "ggml-org/gpt-oss-20b-GGUF|gpt-oss-20b-mxfp4.gguf"
-)
-```
-
-Then set the matching filename in `docker-compose.yml` under the `llamacpp` service:
-
-```yaml
-LLAMA_ARG_MODEL: "/models/gpt-oss-20b-mxfp4.gguf"
-```
-
-If you don't want to use llama.cpp yet, comment out the `llamacpp` and `llamacpp-init` services in `docker-compose.yml`.
-
-### 3. Start the stack
-
-```bash
-docker compose up -d
-```
-
-First run pulls images and downloads models — this takes a while. Subsequent starts are fast.
-
-### 4. Open the UI
-
-Go to **http://localhost:3000** and create your admin account. The first user to sign up becomes the administrator.
-
-All available models appear in the model dropdown. Ollama models show up automatically. llama.cpp and Claude models appear after refreshing connections in Settings → Admin Settings → Connections.
-
-### 5. Set up OpenClaw (one-time)
-
-OpenClaw requires a one-time interactive onboarding:
-
-```bash
+git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
+cd Rumis-AI-Lab
+cp .env.example .env && nano .env      # add at least one API key
 mkdir -p openclaw/config openclaw/workspace
-docker compose up -d openclaw-gateway
-docker compose run --rm openclaw-cli onboard
+bash scripts/up-local.sh
 ```
 
-During onboarding, connect to LiteLLM (`http://litellm:4000/v1`) as your model provider — this gives OpenClaw access to all cloud models without needing any API keys directly. See [OpenClaw Setup](docs/openclaw-setup.md) for the full guide.
+Open WebUI: `http://localhost:3000` — create your admin account on first visit.
 
-Get your dashboard URL: `docker compose run --rm openclaw-cli dashboard --no-open`
+For OpenClaw one-time onboarding:
+```bash
+docker compose -f docker-compose.local.yml run --rm --profile cli openclaw-cli onboard
+```
+
+---
 
 ## Project Structure
 
 ```
-AI-Suite/
-├── docker-compose.yml      # Stack definition
-├── .env                    # API keys and secrets (not committed)
-├── litellm-config.yaml     # Cloud model definitions
-├── llamacpp-start.sh       # Model downloader script
+Rumis-AI-Lab/
+│
+├── docker-compose.yml            # Lite AWS (default)
+├── docker-compose.local.yml      # Local Full (LAN, no SSL)
+├── docker-compose.server.yml     # Custom Server (full stack + SSL)
+│
+├── litellm-config.yaml           # Cloud models only (Lite AWS / Hybrid AWS)
+├── litellm-config.local.yaml     # Cloud + local models (Local / Custom Server)
+├── litellm-config.hybrid.yaml    # Cloud + remote GPU models (Hybrid AWS)
+│
+├── .env.example                  # All environment variables with comments
+├── llamacpp-start.sh             # GGUF model downloader script
+│
+├── scripts/
+│   ├── init-ssl.sh               # Bootstrap Let's Encrypt certs (HTTPS setups)
+│   └── up-local.sh               # Shortcut: start Local Full setup
+│
+├── nginx/conf.d/                 # Generated by init-ssl.sh
+├── certbot/                      # SSL cert storage (gitignored)
+│
 ├── openclaw/
-│   ├── config/             # OpenClaw agent config & memory
-│   └── workspace/          # OpenClaw agent working directory
+│   ├── config/                   # OpenClaw agent config & memory (gitignored)
+│   └── workspace/                # OpenClaw agent working directory (gitignored)
+│
 └── docs/
-    ├── managing-models.md      # Adding, removing, swapping llama.cpp/Ollama models
-    ├── managing-api-models.md  # Configure cloud providers (Claude, GPT, Gemini)
-    ├── openclaw-setup.md       # OpenClaw agent setup and usage
-    ├── gpu-configuration.md    # GPU setup and VRAM tuning
-    ├── architecture.md         # How the services connect
-    └── troubleshooting.md      # Common issues and fixes
+    ├── setup-local.md            # Local Full setup guide
+    ├── aws-ssl-setup.md          # Lite AWS setup guide
+    ├── setup-custom-server.md    # Custom Server setup guide
+    ├── setup-hybrid.md           # Hybrid AWS + GPU server guide
+    ├── openclaw-setup.md         # OpenClaw agent setup and usage
+    ├── managing-models.md        # Add/remove Ollama and llama.cpp models
+    ├── managing-api-models.md    # Configure cloud providers
+    ├── gpu-configuration.md      # NVIDIA setup, VRAM tuning
+    ├── architecture.md           # How services connect
+    └── troubleshooting.md        # Common issues and fixes
 ```
+
+---
 
 ## Common Operations
 
-**Pull a new Ollama model:**
 ```bash
+# Check service status
+docker compose ps                                     # Lite AWS
+docker compose -f docker-compose.local.yml ps         # Local Full
+
+# Pull a new Ollama model
 docker exec ollama ollama pull mistral
-```
 
-**Check service status:**
-```bash
-docker compose ps
-```
+# View logs
+docker compose logs -f
+docker compose -f docker-compose.local.yml logs -f
 
-**View logs for a service:**
-```bash
-docker logs -f llamacpp
-```
-
-**Stop the stack (preserves all data):**
-```bash
+# Stop (data preserved)
 docker compose down
-```
+docker compose -f docker-compose.local.yml down
 
-**Full reset (deletes all data, chat history, models):**
-```bash
+# Full reset (deletes all chat history, model data)
 docker compose down -v
 ```
 
-## Documentation
-
-- [Managing Models](docs/managing-models.md) — Add, remove, and swap llama.cpp and Ollama models
-- [Managing API Models](docs/managing-api-models.md) — Configure Anthropic, OpenAI, Gemini and other cloud providers
-- [OpenClaw Setup](docs/openclaw-setup.md) — Personal AI agent setup, security, and usage
-- [GPU Configuration](docs/gpu-configuration.md) — NVIDIA setup, VRAM tuning, multi-GPU
-- [Architecture](docs/architecture.md) — How services connect, networking, data flow
-- [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
+---
 
 ## Data Persistence
 
-All data is stored in Docker volumes and survives `docker compose down`:
+All data survives `docker compose down`:
 
-- **openwebui_data** — User accounts, chat history, settings
-- **ollama_data** — Downloaded Ollama models
-- **llamacpp_models** — Downloaded GGUF model files
+| Volume | Contents |
+|---|---|
+| `openwebui_data` | User accounts, chat history, settings |
+| `ollama_data` | Downloaded Ollama models |
+| `llamacpp_models` | Downloaded GGUF model files |
 
-Only `docker compose down -v` deletes volumes. Don't use `-v` unless you want a full reset.
+`docker compose down -v` deletes volumes. Don't use `-v` unless you want a full reset.
 
-## Deploying to a Server
+---
 
-This stack is fully portable. Copy the folder to your server, adjust `LLAMA_ARG_N_GPU_LAYERS` and `LLAMA_ARG_THREADS` for your hardware, and run `docker compose up -d`.
+## Documentation
 
-See [GPU Configuration](docs/gpu-configuration.md) for server-specific tuning guidelines.
+| Guide | What it covers |
+|---|---|
+| [Local Full Setup](docs/setup-local.md) | LAN setup, GPU, phone/device access |
+| [Lite AWS Setup](docs/aws-ssl-setup.md) | EC2, DNS, SSL bootstrap, API-only |
+| [Custom Server Setup](docs/setup-custom-server.md) | Own hardware, Let's Encrypt or custom certs |
+| [Hybrid Setup](docs/setup-hybrid.md) | AWS + remote GPU server |
+| [OpenClaw Setup](docs/openclaw-setup.md) | Agent onboarding, security, usage |
+| [Managing Models](docs/managing-models.md) | Add/remove Ollama and llama.cpp models |
+| [Managing API Models](docs/managing-api-models.md) | Cloud providers, LiteLLM config |
+| [GPU Configuration](docs/gpu-configuration.md) | NVIDIA drivers, VRAM tuning, multi-GPU |
+| [Architecture](docs/architecture.md) | Service networking and data flow |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
