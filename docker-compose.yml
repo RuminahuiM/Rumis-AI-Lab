@@ -225,7 +225,7 @@ services:
   # Personal AI agent. Requires one-time onboarding, see docs/openclaw-setup.md
   # Web UI: http://localhost:18789 (token-authenticated)
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:2026.3.8
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:
@@ -301,7 +301,7 @@ services:
 
   # ─── OpenClaw CLI (management, runs on-demand only) ───────────────────────
   openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:2026.3.8
     container_name: openclaw-cli
     volumes:
       - ./openclaw/config:/home/node/.openclaw
