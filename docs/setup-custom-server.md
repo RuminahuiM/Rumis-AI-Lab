@@ -167,7 +167,7 @@ docker compose -f docker-compose.server.yml run --rm --profile cli openclaw-cli 
 - Model provider: `OpenAI-compatible`
 - API URL: `http://litellm:4000/v1`
 - API Key: `sk-no-key-needed`
-- Model: any model from `litellm-config.local.yaml`
+- Model: `gemini-3.1-flash-lite` (default) or any model from `litellm-config.local.yaml`
 
 Get your dashboard URL:
 

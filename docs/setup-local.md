@@ -120,7 +120,7 @@ During the wizard:
 - Model provider: `OpenAI-compatible`
 - API URL: `http://litellm:4000/v1`
 - API Key: `sk-no-key-needed`
-- Model: `claude-sonnet-4.6` or `llama3.2:3b` or any model from `litellm-config.local.yaml`
+- Model: `gemini-3.1-flash-lite` (default) or `llama3.2:3b` for fully local inference
 
 Get your dashboard URL:
 ```bash

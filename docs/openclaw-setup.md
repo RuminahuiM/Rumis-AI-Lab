@@ -60,7 +60,7 @@ The wizard will ask you to configure:
 - **Model provider** — choose "OpenAI-compatible" and enter:
   - API URL: `http://litellm:4000/v1` (internal Docker hostname)
   - API Key: `sk-no-key-needed`
-  - Model: pick any model name from your LiteLLM config — `claude-sonnet-4.6` is a good default; use `claude-haiku-4.5` for testing (cheapest)
+  - Model: `gemini-3.1-flash-lite` (default — fast and cost-effective; requires `GEMINI_API_KEY` in `.env`)
 - **Ollama** — if prompted, enter `http://localhost:11434` for local models
 
 The onboarding generates a gateway token and writes it to `openclaw/config/openclaw.json`.
