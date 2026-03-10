@@ -183,12 +183,35 @@ These directories survive `docker compose down`. Back them up if they contain im
 
 ## Updating OpenClaw
 
+OpenClaw releases are pinned to a specific version tag in the compose files (e.g. `2026.3.8`). A `docker compose pull` alone won't fetch a newer version — you need to bump the tag first.
+
+### 1. Check the latest release
+
+Go to [github.com/openclaw/openclaw/releases](https://github.com/openclaw/openclaw/releases) and note the newest stable version (not a `-beta` tag).
+
+### 2. Update the image tag
+
+In each compose file you use, find the two OpenClaw image lines and update the version:
+
+```bash
+# Find current version
+grep "openclaw:" docker-compose.yml
+
+# Edit the tag — replace 2026.3.8 with the new version in all compose files
+sed -i 's|ghcr.io/openclaw/openclaw:.*|ghcr.io/openclaw/openclaw:NEW_VERSION|g' \
+  docker-compose.yml docker-compose.local.yml docker-compose.server.yml
+```
+
+Or edit the files manually — search for `ghcr.io/openclaw/openclaw:` and update the version on both the `openclaw-gateway` and `openclaw-cli` lines.
+
+### 3. Pull and restart
+
 ```bash
 docker compose pull openclaw-gateway
 docker compose up -d openclaw-gateway
 ```
 
-Your config and workspace persist across updates.
+Your config and workspace persist across updates — the agent's memory, settings, and gateway token are stored in `openclaw/config/` and survive image updates.
 
 ---
 
