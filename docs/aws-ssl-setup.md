@@ -162,6 +162,10 @@ HF_TOKEN=hf_...        # optional but needed for GGUF model downloads
 OUI_DOMAIN=oui.mydomain.ch
 OC_DOMAIN=oc.mydomain.ch
 CERTBOT_EMAIL=you@example.com
+
+# OpenClaw nginx basic-auth credentials (set before running init-ssl.sh)
+OC_AUTH_USER=your-username
+OC_AUTH_PASSWORD=your-strong-password
 ```
 
 ---

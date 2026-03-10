@@ -59,7 +59,7 @@ The wizard will ask you to configure:
 - **Agent name** — give your agent a name and personality
 - **Model provider** — choose "OpenAI-compatible" and enter:
   - API URL: `http://litellm:4000/v1` (internal Docker hostname)
-  - API Key: your `LITELLM_MASTER_KEY` value from `.env`
+  - API Key: `sk-no-key-needed`
   - Model: pick any model name from your LiteLLM config (e.g. `claude-opus-4.6`)
 - **Ollama** — if prompted, enter `http://localhost:11434` for local models
 
@@ -94,7 +94,7 @@ OpenClaw reaches all cloud models (Claude, GPT, Gemini) through LiteLLM at `http
 
 To configure this inside OpenClaw, set up an OpenAI-compatible provider:
 - Base URL: `http://litellm:4000/v1`
-- API Key: your `LITELLM_MASTER_KEY` value from `.env` (LiteLLM now requires auth)
+- API Key: `sk-no-key-needed`
 - Available models: all models listed in `litellm-config.yaml`
 
 ### Local models via Ollama
