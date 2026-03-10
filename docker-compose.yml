@@ -1,9 +1,13 @@
 services:
   # ─── Ollama ────────────────────────────────────────────────────────────────
+  # Profile: local-models  →  only starts when you run:
+  #   docker compose --profile local-models up -d
+  # Requires a GPU-enabled host (nvidia-container-toolkit).
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
+    profiles: [local-models]
     ports:
       - "127.0.0.1:11434:11434"  # localhost-only; no auth → never expose publicly
     volumes:
@@ -33,6 +37,7 @@ services:
   ollama-init:
     image: curlimages/curl:latest
     container_name: ollama-init
+    profiles: [local-models]
     depends_on:
       ollama:
         condition: service_healthy
@@ -47,9 +52,11 @@ services:
       - backend-net
 
   # ─── llama.cpp model downloader (runs once, then exits) ───────────────────
+  # Profile: local-models  →  requires GPU host + HF_TOKEN for gated models.
   llamacpp-init:
     image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
     container_name: llamacpp-init
+    profiles: [local-models]
     volumes:
       - llamacpp_models:/models
       - ./llamacpp-start.sh:/start.sh:ro
@@ -61,12 +68,13 @@ services:
       - backend-net
 
   # ─── llama.cpp server (gpt-oss-20b) ──────────────────────────────────────
-  # Uses official CUDA image = full GPU support.
+  # Profile: local-models  →  uses official CUDA image, requires GPU host.
   # To add another model: duplicate this service, change the name/port/model.
   llamacpp:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     container_name: llamacpp
     restart: unless-stopped
+    profiles: [local-models]
     ports:
       - "127.0.0.1:8081:8080"  # localhost-only; no auth → never expose publicly
     volumes:
@@ -179,16 +187,17 @@ services:
     volumes:
       - openwebui_data:/app/backend/data
     environment:
-      OLLAMA_BASE_URLS: "http://ollama:11434"
-      ENABLE_OLLAMA_API: "true"
-      # Add more llamacpp endpoints separated by semicolons as you add models
-      OPENAI_API_BASE_URLS: "http://llamacpp:8080/v1;http://litellm:4000/v1"
-      OPENAI_API_KEYS: "sk-no-key-needed;sk-no-key-needed"
+      # Cloud models go through LiteLLM (API keys in .env).
+      # To add local models later: start with --profile local-models and add
+      # endpoints here (e.g. "http://litellm:4000/v1;http://llamacpp:8080/v1").
+      OPENAI_API_BASE_URLS: "http://litellm:4000/v1"
+      OPENAI_API_KEYS: "sk-no-key-needed"
+      # Ollama disabled by default – only needed with --profile local-models.
+      ENABLE_OLLAMA_API: "false"
       WEBUI_AUTH: "true"
       ENABLE_SIGNUP: "false"  # invite-only; admin adds users via Settings → Admin → Users
-      HF_TOKEN: "${HF_TOKEN:-}"
     depends_on:
-      ollama:
+      litellm:
         condition: service_healthy
     logging:
       driver: json-file
