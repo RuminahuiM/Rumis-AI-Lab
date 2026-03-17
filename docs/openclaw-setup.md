@@ -58,9 +58,9 @@ The wizard will ask you to configure:
 
 - **Agent name** — give your agent a name and personality
 - **Model provider** — choose "OpenAI-compatible" and enter:
-  - API URL: `http://localhost:4000/v1` (this reaches LiteLLM inside the Docker network)
+  - API URL: `http://litellm:4000/v1` (internal Docker hostname)
   - API Key: `sk-no-key-needed`
-  - Model: pick any model name from your LiteLLM config (e.g. `claude-opus-4.6`)
+  - Model: `gemini-3.1-flash-lite` (default — fast and cost-effective; requires `GEMINI_API_KEY` in `.env`)
 - **Ollama** — if prompted, enter `http://localhost:11434` for local models
 
 The onboarding generates a gateway token and writes it to `openclaw/config/openclaw.json`.
@@ -103,7 +103,7 @@ OpenClaw can connect directly to Ollama at `http://ollama:11434`. Models you've 
 
 ### Local models via llama.cpp
 
-llama.cpp models are accessible via their OpenAI-compatible API at `http://llamacpp:8080/v1` (or whichever port your llamacpp service uses). API key: `sk-no-key-needed`.
+llama.cpp models are accessible via their OpenAI-compatible API at `http://llamacpp:8080/v1` (or whichever port your llamacpp service uses). API key: `sk-no-key-needed` (llama.cpp has no auth; it is only reachable on the internal Docker network).
 
 ---
 
@@ -111,7 +111,9 @@ llama.cpp models are accessible via their OpenAI-compatible API at `http://llama
 
 This setup follows security best practices:
 
-- **No API keys in OpenClaw** — all cloud access goes through LiteLLM as a proxy on the internal network
+- **No raw API keys in OpenClaw** — all cloud access goes through LiteLLM as a proxy on the internal network
+- **Nginx basic auth on `oc.<domain>`** — a username/password (set in `.env` as `OC_AUTH_USER`/`OC_AUTH_PASSWORD`) is required before the request even reaches OpenClaw; combined with OpenClaw's own gateway token this gives two independent auth layers
+- **Segmented Docker networks** — nginx can only reach OpenClaw and Open WebUI; it cannot directly reach Ollama, llama.cpp, or LiteLLM
 - **Token-authenticated Web UI** — the dashboard requires a gateway token, not accessible without it
 - **Port bound to localhost** — `127.0.0.1:18789` prevents access from other devices on your network
 - **Non-root container** — runs as `node` user (uid 1000)
@@ -181,12 +183,35 @@ These directories survive `docker compose down`. Back them up if they contain im
 
 ## Updating OpenClaw
 
+OpenClaw releases are pinned to a specific version tag in the compose files (e.g. `2026.3.8`). A `docker compose pull` alone won't fetch a newer version — you need to bump the tag first.
+
+### 1. Check the latest release
+
+Go to [github.com/openclaw/openclaw/releases](https://github.com/openclaw/openclaw/releases) and note the newest stable version (not a `-beta` tag).
+
+### 2. Update the image tag
+
+In each compose file you use, find the two OpenClaw image lines and update the version:
+
+```bash
+# Find current version
+grep "openclaw:" docker-compose.yml
+
+# Edit the tag — replace 2026.3.8 with the new version in all compose files
+sed -i 's|ghcr.io/openclaw/openclaw:.*|ghcr.io/openclaw/openclaw:NEW_VERSION|g' \
+  docker-compose.yml docker-compose.local.yml docker-compose.server.yml
+```
+
+Or edit the files manually — search for `ghcr.io/openclaw/openclaw:` and update the version on both the `openclaw-gateway` and `openclaw-cli` lines.
+
+### 3. Pull and restart
+
 ```bash
 docker compose pull openclaw-gateway
 docker compose up -d openclaw-gateway
 ```
 
-Your config and workspace persist across updates.
+Your config and workspace persist across updates — the agent's memory, settings, and gateway token are stored in `openclaw/config/` and survive image updates.
 
 ---
 

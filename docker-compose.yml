@@ -1,11 +1,28 @@
+# =============================================================================
+# Lite AWS Setup – cloud API models only, HTTPS via nginx + Let's Encrypt
+# =============================================================================
+# This is the default compose file for the Lite AWS deployment.
+# For other setups, use:
+#   Local Full (LAN):       docker compose -f docker-compose.local.yml up -d
+#   Custom Hosted Server:   docker compose -f docker-compose.server.yml up -d
+#   Hybrid AWS + GPU:       use this file with litellm-config.hybrid.yaml
+#                           (see docs/setup-hybrid.md)
+#
+# First-time AWS setup: bash scripts/init-ssl.sh   (generates SSL certs)
+# =============================================================================
+
 services:
   # ─── Ollama ────────────────────────────────────────────────────────────────
+  # Profile: local-models  →  only starts when you run:
+  #   docker compose --profile local-models up -d
+  # Requires a GPU-enabled host (nvidia-container-toolkit).
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
+    profiles: [local-models]
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"  # localhost-only; no auth → never expose publicly
     volumes:
       - ollama_data:/root/.ollama
     deploy:
@@ -21,13 +38,19 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── Ollama bootstrap – pulls a starter model once ────────────────────────
   ollama-init:
     image: curlimages/curl:latest
     container_name: ollama-init
+    profiles: [local-models]
     depends_on:
       ollama:
         condition: service_healthy
@@ -39,12 +62,14 @@ services:
       '
     restart: "no"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── llama.cpp model downloader (runs once, then exits) ───────────────────
+  # Profile: local-models  →  requires GPU host + HF_TOKEN for gated models.
   llamacpp-init:
     image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
     container_name: llamacpp-init
+    profiles: [local-models]
     volumes:
       - llamacpp_models:/models
       - ./llamacpp-start.sh:/start.sh:ro
@@ -53,17 +78,18 @@ services:
     entrypoint: ["bash", "/start.sh"]
     restart: "no"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── llama.cpp server (gpt-oss-20b) ──────────────────────────────────────
-  # Uses official CUDA image = full GPU support.
+  # Profile: local-models  →  uses official CUDA image, requires GPU host.
   # To add another model: duplicate this service, change the name/port/model.
   llamacpp:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     container_name: llamacpp
     restart: unless-stopped
+    profiles: [local-models]
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"  # localhost-only; no auth → never expose publicly
     volumes:
       - llamacpp_models:/models:ro
     environment:
@@ -90,8 +116,13 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── TEMPLATE: add more llama.cpp models by duplicating the block above ──
   # llamacpp-glm5:
@@ -99,7 +130,7 @@ services:
   #   container_name: llamacpp-glm5
   #   restart: unless-stopped
   #   ports:
-  #     - "8082:8080"
+  #     - "127.0.0.1:8082:8080"
   #   volumes:
   #     - llamacpp_models:/models:ro
   #   environment:
@@ -126,7 +157,7 @@ services:
   #     retries: 5
   #     start_period: 120s
   #   networks:
-  #     - ai-stack
+  #     - backend-net
 
   # ─── LiteLLM Proxy – translates Anthropic API → OpenAI-compatible ────────
   litellm:
@@ -134,7 +165,7 @@ services:
     container_name: litellm
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"  # localhost-only; no auth (internal network only)
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: >
@@ -142,17 +173,22 @@ services:
       --host 0.0.0.0
       --port 4000
     environment:
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - backend-net
 
   # ─── Open WebUI ───────────────────────────────────────────────────────────
   open-webui:
@@ -160,29 +196,36 @@ services:
     container_name: open-webui
     restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "127.0.0.1:3000:8080"  # localhost-only; public access via nginx HTTPS
     volumes:
       - openwebui_data:/app/backend/data
     environment:
-      OLLAMA_BASE_URLS: "http://ollama:11434"
-      ENABLE_OLLAMA_API: "true"
-      # Add more llamacpp endpoints separated by semicolons as you add models
-      OPENAI_API_BASE_URLS: "http://llamacpp:8080/v1;http://litellm:4000/v1"
-      OPENAI_API_KEYS: "sk-no-key-needed;sk-no-key-needed"
+      # Cloud models go through LiteLLM (API keys in .env).
+      # To add local models later: start with --profile local-models and add
+      # endpoints here (e.g. "http://litellm:4000/v1;http://llamacpp:8080/v1").
+      OPENAI_API_BASE_URLS: "http://litellm:4000/v1"
+      OPENAI_API_KEYS: "sk-no-key-needed"
+      # Ollama disabled by default – only needed with --profile local-models.
+      ENABLE_OLLAMA_API: "false"
       WEBUI_AUTH: "true"
-      ENABLE_SIGNUP: "true"
-      HF_TOKEN: "${HF_TOKEN:-}"
+      ENABLE_SIGNUP: "false"  # invite-only; admin adds users via Settings → Admin → Users
     depends_on:
-      ollama:
+      litellm:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - frontend-net
+      - backend-net
 
   # ─── OpenClaw Gateway ──────────────────────────────────────────────────────
   # Personal AI agent. Requires one-time onboarding, see docs/openclaw-setup.md
   # Web UI: http://localhost:18789 (token-authenticated)
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:2026.3.8
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:
@@ -204,12 +247,61 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
-      - ai-stack
+      - frontend-net
+      - backend-net
+
+  # ─── Nginx – SSL termination & reverse proxy ─────────────────────────────
+  # Routes oui.<domain> → open-webui and oc.<domain> → openclaw-gateway.
+  # Config is generated by scripts/init-ssl.sh on first deployment.
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/auth:/etc/nginx/auth:ro   # htpasswd files for basic auth
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - open-webui
+      - openclaw-gateway
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - frontend-net
+
+  # ─── Certbot – auto-renews Let's Encrypt certificates every 12 h ─────────
+  # No internal network needed: only requires internet access (Let's Encrypt)
+  # and the shared certbot volumes.
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   # ─── OpenClaw CLI (management, runs on-demand only) ───────────────────────
   openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:2026.3.8
     container_name: openclaw-cli
     volumes:
       - ./openclaw/config:/home/node/.openclaw
@@ -238,5 +330,10 @@ volumes:
   llamacpp_models:
 
 networks:
-  ai-stack:
+  # Public-facing tier: nginx ↔ open-webui ↔ openclaw-gateway
+  frontend-net:
+    driver: bridge
+  # Internal AI tier: webuis ↔ ollama / llamacpp / litellm
+  # nginx cannot reach backend services directly
+  backend-net:
     driver: bridge
