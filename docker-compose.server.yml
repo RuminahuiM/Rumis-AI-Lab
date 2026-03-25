@@ -211,6 +211,38 @@ services:
       - frontend-net
       - backend-net
 
+  # ─── n8n – workflow automation ─────────────────────────────────────────────
+  # Access: https://<N8N_DOMAIN>  (proxied by nginx after init-ssl.sh)
+  # First run: complete setup wizard to create the admin account.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      N8N_HOST: "${N8N_DOMAIN:-localhost}"
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: "https"
+      WEBHOOK_URL: "https://${N8N_DOMAIN:-localhost}/"
+      GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - frontend-net
+      - backend-net
+
   # ─── Nginx – SSL termination & reverse proxy ──────────────────────────────
   nginx:
     image: nginx:1.27-alpine
@@ -227,6 +259,7 @@ services:
     depends_on:
       - open-webui
       - openclaw-gateway
+      - n8n
     logging:
       driver: json-file
       options:
@@ -279,6 +312,7 @@ volumes:
   ollama_data:
   openwebui_data:
   llamacpp_models:
+  n8n_data:
 
 networks:
   frontend-net:

@@ -213,6 +213,36 @@ services:
       - frontend-net
       - backend-net
 
+  # ─── n8n – workflow automation ─────────────────────────────────────────────
+  # Access: http://<lan-ip>:5678
+  # First run: complete setup wizard to create the admin account.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:5678:5678"   # LAN-accessible
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: "http"
+      GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - frontend-net
+      - backend-net
+
   # ─── OpenClaw CLI (on-demand) ───────────────────────────────────────────────
   openclaw-cli:
     image: ghcr.io/openclaw/openclaw:2026.3.8
@@ -242,6 +272,7 @@ volumes:
   ollama_data:
   openwebui_data:
   llamacpp_models:
+  n8n_data:
 
 networks:
   frontend-net:

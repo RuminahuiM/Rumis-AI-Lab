@@ -17,6 +17,7 @@ fi
 
 OUI_DOMAIN="${OUI_DOMAIN:?'OUI_DOMAIN is not set. Add it to your .env file (e.g. OUI_DOMAIN=oui.mydomain.ch)'}"
 OC_DOMAIN="${OC_DOMAIN:?'OC_DOMAIN is not set. Add it to your .env file (e.g. OC_DOMAIN=oc.mydomain.ch)'}"
+N8N_DOMAIN="${N8N_DOMAIN:?'N8N_DOMAIN is not set. Add it to your .env file (e.g. N8N_DOMAIN=n8n.mydomain.ch)'}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:?'CERTBOT_EMAIL is not set. Add it to your .env file (e.g. CERTBOT_EMAIL=you@example.com)'}"
 OC_AUTH_USER="${OC_AUTH_USER:?'OC_AUTH_USER is not set. Add it to your .env file (e.g. OC_AUTH_USER=admin)'}"
 OC_AUTH_PASSWORD="${OC_AUTH_PASSWORD:?'OC_AUTH_PASSWORD is not set. Add it to your .env file (e.g. OC_AUTH_PASSWORD=yourpassword)'}"
@@ -25,6 +26,7 @@ echo "==========================================================================
   Rumis AI Lab – SSL bootstrap
   Open WebUI : https://${OUI_DOMAIN}
   OpenClaw   : https://${OC_DOMAIN}
+  n8n        : https://${N8N_DOMAIN}
   Email      : ${CERTBOT_EMAIL}
 =========================================================================="
 
@@ -49,7 +51,7 @@ cat > nginx/conf.d/app.conf <<NGINX
 # HTTP – Let's Encrypt ACME challenge + temporary 503
 server {
     listen 80;
-    server_name ${OUI_DOMAIN} ${OC_DOMAIN};
+    server_name ${OUI_DOMAIN} ${OC_DOMAIN} ${N8N_DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -89,6 +91,16 @@ docker compose run --rm certbot certonly \
   --no-eff-email \
   -d "${OC_DOMAIN}"
 
+echo ""
+echo "── Step 3/4: Requesting certificate for ${N8N_DOMAIN}..."
+docker compose run --rm certbot certonly \
+  --webroot \
+  --webroot-path=/var/www/certbot \
+  --email "${CERTBOT_EMAIL}" \
+  --agree-tos \
+  --no-eff-email \
+  -d "${N8N_DOMAIN}"
+
 # ── Step 4: write full HTTPS nginx config and reload ─────────────────────────
 echo ""
 echo "── Step 4/4: Writing HTTPS nginx config and reloading..."
@@ -123,7 +135,7 @@ cat > nginx/conf.d/app.conf <<NGINX
 # ── HTTP → HTTPS redirect + Let's Encrypt renewal challenge ──────────────────
 server {
     listen 80;
-    server_name ${OUI_DOMAIN} ${OC_DOMAIN};
+    server_name ${OUI_DOMAIN} ${OC_DOMAIN} ${N8N_DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -210,6 +222,43 @@ server {
         proxy_read_timeout 86400s;
     }
 }
+
+# ── n8n  →  https://${N8N_DOMAIN} ────────────────────────────────────────────
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${N8N_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${N8N_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${N8N_DOMAIN}/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options           "SAMEORIGIN"   always;
+    add_header X-Content-Type-Options    "nosniff"      always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    # n8n requires unsafe-inline/eval for its editor UI and WebSocket connections.
+    add_header Content-Security-Policy   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' wss: https: ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self';" always;
+
+    # Allow larger payloads for workflow imports and binary data
+    client_max_body_size 50M;
+
+    location / {
+        proxy_pass         http://n8n:5678;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+
+        # WebSocket support (required by n8n editor)
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
+}
 NGINX
 
 echo "   Reloading nginx..."
@@ -221,6 +270,7 @@ echo "  SSL setup complete!"
 echo ""
 echo "  Open WebUI  →  https://${OUI_DOMAIN}"
 echo "  OpenClaw    →  https://${OC_DOMAIN}"
+echo "  n8n         →  https://${N8N_DOMAIN}"
 echo ""
 echo "  Certificates auto-renew every 12 h via the certbot container."
 echo "=========================================================================="
