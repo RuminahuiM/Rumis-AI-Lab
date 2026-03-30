@@ -273,9 +273,10 @@ services:
       N8N_PORT: "5678"
       N8N_PROTOCOL: "https"
       WEBHOOK_URL: "https://${N8N_DOMAIN:-localhost}/"
+      N8N_PROXY_HOPS: "1"
       GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
       timeout: 10s
       retries: 5
