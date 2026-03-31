@@ -4,6 +4,7 @@ This guide walks you through hosting Rumis AI Lab on AWS with:
 
 - `oui.mydomain.ch` → **Open WebUI** (HTTPS)
 - `oc.mydomain.ch` → **OpenClaw** (HTTPS)
+- `n8n.mydomain.ch` → **n8n** workflow automation + MCP server (HTTPS)
 
 SSL certificates are issued for free by **Let's Encrypt** and auto-renew every 12 hours.
 
@@ -20,8 +21,9 @@ AWS Security Group (ports 80, 443 open)
     ▼
 EC2 Instance
  ├── nginx (port 80/443)  ← SSL termination + reverse proxy
- │    ├── oui.mydomain.ch  →  open-webui:8080  (Docker internal)
- │    └── oc.mydomain.ch   →  openclaw-gateway:18789  (Docker internal)
+ │    ├── oui.mydomain.ch  →  open-webui:8080      (Docker internal)
+ │    ├── oc.mydomain.ch   →  openclaw-gateway:18789  (Docker internal)
+ │    └── n8n.mydomain.ch  →  n8n:5678             (Docker internal)
  └── certbot              ← auto-renews Let's Encrypt certs
 ```
 
@@ -58,9 +60,9 @@ Open the following **inbound** rules:
 |------|----------|--------|---------|
 | 22 | TCP | Your IP only | SSH access |
 | 80 | TCP | 0.0.0.0/0 | HTTP (Let's Encrypt challenge + redirect) |
-| 443 | TCP | 0.0.0.0/0 | HTTPS (Open WebUI + OpenClaw) |
+| 443 | TCP | 0.0.0.0/0 | HTTPS (Open WebUI + OpenClaw + n8n) |
 
-**Do not open** ports 3000, 4000, 8081, 11434, 18789 — these are internal only.
+**Do not open** ports 3000, 4000, 5678, 8081, 11434, 18789 — these are internal only.
 
 ### Elastic IP
 
@@ -73,12 +75,13 @@ Assign an **Elastic IP** to the instance so the IP stays fixed across reboots:
 
 ## Step 2 – Configure DNS
 
-At your domain registrar (or Route 53), add two **A records**:
+At your domain registrar (or Route 53), add **three A records** — all pointing to the same Elastic IP:
 
 | Name | Type | Value |
 |------|------|-------|
 | `oui` | A | `<your-elastic-ip>` |
 | `oc` | A | `<your-elastic-ip>` |
+| `n8n` | A | `<your-elastic-ip>` |
 
 Wait for DNS to propagate (usually 1–5 minutes with a low TTL, up to 48 h otherwise).
 
@@ -87,6 +90,7 @@ Wait for DNS to propagate (usually 1–5 minutes with a low TTL, up to 48 h othe
 ```bash
 dig +short oui.mydomain.ch   # should return your EC2 IP
 dig +short oc.mydomain.ch    # should return your EC2 IP
+dig +short n8n.mydomain.ch   # should return your EC2 IP
 ```
 
 ---
@@ -164,7 +168,11 @@ HF_TOKEN=hf_...        # optional but needed for GGUF model downloads
 # SSL domains – must match your DNS records exactly
 OUI_DOMAIN=oui.mydomain.ch
 OC_DOMAIN=oc.mydomain.ch
+N8N_DOMAIN=n8n.mydomain.ch        # ← required; script aborts without this
 CERTBOT_EMAIL=you@example.com
+
+# Timezone for n8n workflow scheduling (IANA name)
+GENERIC_TIMEZONE=Europe/Zurich    # e.g. America/New_York, Asia/Tokyo
 
 # OpenClaw nginx basic-auth credentials (set before running init-ssl.sh)
 OC_AUTH_USER=your-username
@@ -191,6 +199,7 @@ The script takes about 1–2 minutes. When it finishes you should see:
 SSL setup complete!
   Open WebUI  →  https://oui.mydomain.ch
   OpenClaw    →  https://oc.mydomain.ch
+  n8n         →  https://n8n.mydomain.ch
   Certificates auto-renew every 12 h via the certbot container.
 ```
 
@@ -202,13 +211,43 @@ SSL setup complete!
 docker compose up -d
 ```
 
-This starts: litellm, open-webui, openclaw-gateway, nginx, certbot. (Ollama and llama.cpp are in the `local-models` profile and won't start — see [Custom Server](setup-custom-server.md) if you need local models.)
+This starts: litellm, open-webui, openclaw-gateway, n8n, nginx, certbot. (Ollama and llama.cpp are in the `local-models` profile and won't start — see [Custom Server](setup-custom-server.md) if you need local models.)
 
-Check everything is running:
+### Verify all services are healthy
 
 ```bash
 docker compose ps
 ```
+
+Every service should show `healthy` or `running`. If a service shows `unhealthy` or keeps restarting, check its logs:
+
+```bash
+docker compose logs <service-name> --tail=30
+```
+
+### Verify web access
+
+Run these from your **local machine** (not the EC2 instance):
+
+```bash
+# Should redirect to HTTPS (301) — not 503 or timeout
+curl -I http://oui.mydomain.ch
+
+# Should return 200 with Open WebUI HTML
+curl -sI https://oui.mydomain.ch | head -5
+
+# Should return 200 with n8n HTML
+curl -sI https://n8n.mydomain.ch | head -5
+
+# Should return 401 (basic auth prompt) — that means nginx is working
+curl -sI https://oc.mydomain.ch | head -5
+```
+
+If you get a **timeout** (not a refused connection), the AWS Security Group is blocking port 80/443 — add inbound rules.
+
+If you get a **503** with "SSL not configured yet", init-ssl.sh did not complete — check nginx logs and re-run the script.
+
+If you get a **502 Bad Gateway**, the backend service isn't ready yet — wait 30 seconds and retry, or check `docker compose ps`.
 
 ### First-time Open WebUI setup
 
@@ -216,9 +255,15 @@ docker compose ps
 2. Create your admin account on first visit
 3. Sign in and start chatting
 
+### First-time n8n setup
+
+1. Open `https://n8n.mydomain.ch`
+2. Complete the setup wizard (creates your admin account)
+3. See [docs/n8n-mcp-setup.md](n8n-mcp-setup.md) to wire n8n as an MCP tool server for Open WebUI
+
 ### First-time OpenClaw setup
 
-See `docs/openclaw-setup.md` for the one-time onboarding steps.
+See [docs/openclaw-setup.md](openclaw-setup.md) for the one-time onboarding steps.
 The UI is at `https://oc.mydomain.ch`.
 
 ---
@@ -256,7 +301,7 @@ docker compose up -d
 
 ## Security Checklist
 
-- [x] Ports 3000, 4000, 8081, 11434, 18789 are **not** in the Security Group
+- [x] Ports 3000, 4000, 5678, 8081, 11434, 18789 are **not** in the Security Group
 - [x] Port 22 (SSH) is restricted to **your IP only**
 - [x] `open-webui` host port is bound to `127.0.0.1` only
 - [x] `openclaw-gateway` host port is bound to `127.0.0.1` only
