@@ -135,6 +135,12 @@ cat > nginx/conf.d/app.conf <<NGINX
 # Hide nginx version from Server response header
 server_tokens off;
 
+# WebSocket upgrade map – sends Connection: upgrade for WS, close for plain HTTP
+map \$http_upgrade \$connection_upgrade {
+    default  upgrade;
+    ''       close;
+}
+
 # ── HTTP → HTTPS redirect + Let's Encrypt renewal challenge ──────────────────
 server {
     listen 80;
@@ -178,11 +184,15 @@ server {
         proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto \$scheme;
 
+        # Disable buffering – required for LLM token streaming (SSE)
+        proxy_buffering    off;
+
         # WebSocket support (required by Open WebUI)
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    \$http_upgrade;
-        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Connection \$connection_upgrade;
         proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
     }
 }
 
@@ -218,11 +228,15 @@ server {
         proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto \$scheme;
 
+        # Disable buffering – required for streaming responses
+        proxy_buffering    off;
+
         # WebSocket support (required by OpenClaw)
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    \$http_upgrade;
-        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Connection \$connection_upgrade;
         proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
     }
 }
 
@@ -255,11 +269,15 @@ server {
         proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto \$scheme;
 
+        # Disable buffering – required for n8n SSE and workflow streaming
+        proxy_buffering    off;
+
         # WebSocket support (required by n8n editor)
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    \$http_upgrade;
-        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Connection \$connection_upgrade;
         proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 NGINX
