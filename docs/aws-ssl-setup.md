@@ -8,6 +8,8 @@ This guide walks you through hosting Rumis AI Lab on AWS with:
 
 SSL certificates are issued for free by **Let's Encrypt** and auto-renew every 12 hours.
 
+> **Do NOT create certificates in AWS.** You do not need AWS Certificate Manager (ACM), self-signed certs, or anything from the AWS console. `init-ssl.sh` handles everything — it runs certbot, which contacts Let's Encrypt directly and stores the certs on the EC2 instance. ACM certs cannot be exported to non-AWS services and are unnecessary here.
+
 ---
 
 ## Architecture Overview
@@ -64,6 +66,15 @@ Open the following **inbound** rules:
 
 **Do not open** ports 3000, 4000, 5678, 8081, 11434, 18789 — these are internal only.
 
+### SSH Key Pair
+
+When launching the instance, AWS will ask you to select or create a **key pair**. This is the `.pem` file you'll use to SSH in. If you don't have one:
+
+1. In the EC2 launch wizard → **Key pair** → **Create new key pair**
+2. Name it (e.g. `rumis-key`), type RSA, format `.pem`
+3. Download it and keep it safe — AWS only gives it to you once
+4. `chmod 400 rumis-key.pem` on your local machine before use
+
 ### Elastic IP
 
 Assign an **Elastic IP** to the instance so the IP stays fixed across reboots:
@@ -84,6 +95,8 @@ At your domain registrar (or Route 53), add **three A records** — all pointing
 | `n8n` | A | `<your-elastic-ip>` |
 
 Wait for DNS to propagate (usually 1–5 minutes with a low TTL, up to 48 h otherwise).
+
+> **Cloudflare users:** If your domain is managed by Cloudflare, set the DNS records to **DNS only** (grey cloud icon), not **Proxied** (orange cloud). Cloudflare's proxy intercepts HTTP traffic and breaks the Let's Encrypt ACME challenge. You can re-enable the proxy after certs are issued if you want, but it's not recommended for this setup (it would add a second SSL termination layer unnecessarily).
 
 **Verify propagation before continuing:**
 
@@ -177,6 +190,9 @@ GENERIC_TIMEZONE=Europe/Zurich    # e.g. America/New_York, Asia/Tokyo
 # OpenClaw nginx basic-auth credentials (set before running init-ssl.sh)
 OC_AUTH_USER=your-username
 OC_AUTH_PASSWORD=your-strong-password
+
+# LiteLLM internal master key (change this from the default for security)
+LITELLM_MASTER_KEY=sk-your-secret-master-key
 ```
 
 ---
@@ -186,7 +202,7 @@ OC_AUTH_PASSWORD=your-strong-password
 This script:
 1. Writes an HTTP-only nginx config
 2. Starts nginx
-3. Requests Let's Encrypt certificates for both domains
+3. Requests Let's Encrypt certificates for all three domains (oui, oc, n8n)
 4. Writes the full HTTPS nginx config and reloads nginx
 
 ```bash
