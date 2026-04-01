@@ -213,6 +213,12 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     logging:
       driver: json-file
       options:
@@ -307,9 +313,12 @@ services:
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
-      - open-webui
-      - openclaw-gateway
-      - n8n
+      open-webui:
+        condition: service_healthy
+      openclaw-gateway:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
     logging:
       driver: json-file
       options:
