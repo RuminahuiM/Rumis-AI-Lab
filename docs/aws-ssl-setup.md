@@ -12,6 +12,84 @@ SSL certificates are issued for free by **Let's Encrypt** and auto-renew every 1
 
 ---
 
+## Quick Run Example (TL;DR)
+
+Complete sequence from zero to working HTTPS. Steps are numbered so you know exactly where you are and what to wait for.
+
+```
+[AWS Console]  ~5 min
+  1. Launch EC2 t3.small (Ubuntu 24.04), create key pair, open ports 22/80/443
+  2. Allocate Elastic IP → associate with instance
+
+[Domain registrar]  ~2 min + wait
+  3. Add 3 A records: oui / oc / n8n → <elastic-ip>
+  ⏳ WAIT: DNS propagation (1–5 min with low TTL, up to 48 h otherwise)
+     Verify: dig +short oui.mydomain.ch  → must return your EC2 IP
+
+[EC2 terminal]
+  4. SSH in:
+       ssh -i rumis-key.pem ubuntu@<elastic-ip>
+
+  5. Install Docker (~2 min):
+       curl -fsSL https://get.docker.com | sudo sh
+       sudo usermod -aG docker ubuntu && newgrp docker
+
+  6. Clone and configure:
+       git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
+       cd Rumis-AI-Lab
+       cp .env.example .env
+       nano .env   # fill in API keys + domain names + passwords
+
+  7. Bootstrap SSL (~1–2 min, fully automatic — no manual cert steps):
+       bash scripts/init-ssl.sh
+     ⏳ WAIT: certbot contacts Let's Encrypt for 3 domains (~15–30 s each)
+              No email confirmation, no AWS console action needed.
+     ✅ Done when you see:
+          SSL setup complete!
+            Open WebUI  →  https://oui.mydomain.ch
+            OpenClaw    →  https://oc.mydomain.ch
+            n8n         →  https://n8n.mydomain.ch
+
+  8. Start services:
+       docker compose up -d
+     ⏳ WAIT: first run pulls Docker images (~5–10 min depending on connection)
+     ⏳ WAIT: healthchecks pass before nginx starts (~2–3 min after images are pulled)
+              litellm → open-webui (healthy) + openclaw + n8n (healthy) → nginx starts
+     Monitor:
+       watch docker compose ps   # all should show "healthy" or "running"
+```
+
+### Verify everything works (run from your local machine)
+
+```bash
+# 1. HTTP redirect — should return HTTP/1.1 301 (not timeout, not 503)
+curl -I http://oui.mydomain.ch
+
+# 2. HTTPS Open WebUI — should return HTTP/2 200
+curl -sI https://oui.mydomain.ch | head -3
+
+# 3. HTTPS n8n — should return HTTP/2 200
+curl -sI https://n8n.mydomain.ch | head -3
+
+# 4. HTTPS OpenClaw — should return HTTP/2 401 (auth prompt = nginx is working)
+curl -sI https://oc.mydomain.ch | head -3
+
+# 5. Check cert issuer (should say "Let's Encrypt" not "self-signed")
+curl -vI https://oui.mydomain.ch 2>&1 | grep -E "issuer|subject|expire"
+```
+
+### What each error means
+
+| Response | Meaning | Fix |
+|----------|---------|-----|
+| Timeout / no response | Security Group blocking port 80/443 | Add inbound rules in AWS console |
+| `503 SSL not configured yet` | `init-ssl.sh` didn't complete | Check `docker compose logs nginx`, re-run script |
+| `502 Bad Gateway` | Backend not healthy yet | Wait 30 s, check `docker compose ps` |
+| `curl: (6) Could not resolve` | DNS not propagated yet | Wait and re-check with `dig` |
+| Cert issued by self-signed CA | Something intercepted TLS (rare) | Check if Cloudflare proxy is on |
+
+---
+
 ## Architecture Overview
 
 ```
