@@ -209,7 +209,10 @@ services:
       # Ollama disabled by default – only needed with --profile local-models.
       ENABLE_OLLAMA_API: "false"
       WEBUI_AUTH: "true"
-      ENABLE_SIGNUP: "false"  # invite-only; admin adds users via Settings → Admin → Users
+      # Pre-create admin account on first boot (set these in .env)
+      # Open WebUI auto-disables signup after first admin is created.
+      WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL}"
+      WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD}"
     depends_on:
       litellm:
         condition: service_healthy

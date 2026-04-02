@@ -291,6 +291,10 @@ CERTBOT_EMAIL=you@example.com
 # Timezone for n8n workflow scheduling (IANA name)
 GENERIC_TIMEZONE=Europe/Zurich    # e.g. America/New_York, Asia/Tokyo
 
+# Open WebUI admin account (pre-created on first boot, signup auto-disables after)
+WEBUI_ADMIN_EMAIL=you@example.com
+WEBUI_ADMIN_PASSWORD=your-strong-password
+
 # OpenClaw nginx basic-auth credentials (set before running init-ssl.sh)
 OC_AUTH_USER=your-username
 OC_AUTH_PASSWORD=your-strong-password
