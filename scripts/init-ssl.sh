@@ -73,7 +73,7 @@ sleep 5
 # ── Step 3: obtain certificates ───────────────────────────────────────────────
 echo ""
 echo "── Step 3/4: Requesting certificate for ${OUI_DOMAIN}..."
-docker compose run --rm certbot certonly \
+docker compose run --rm --entrypoint certbot certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
   --email "${CERTBOT_EMAIL}" \
@@ -83,7 +83,7 @@ docker compose run --rm certbot certonly \
 
 echo ""
 echo "── Step 3/4: Requesting certificate for ${OC_DOMAIN}..."
-docker compose run --rm certbot certonly \
+docker compose run --rm --entrypoint certbot certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
   --email "${CERTBOT_EMAIL}" \
@@ -93,7 +93,7 @@ docker compose run --rm certbot certonly \
 
 echo ""
 echo "── Step 3/4: Requesting certificate for ${N8N_DOMAIN}..."
-docker compose run --rm certbot certonly \
+docker compose run --rm --entrypoint certbot certbot certonly \
   --webroot \
   --webroot-path=/var/www/certbot \
   --email "${CERTBOT_EMAIL}" \
