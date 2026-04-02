@@ -37,21 +37,31 @@ mkdir -p openclaw/config openclaw/workspace
 chown -R 1000:1000 openclaw/ 2>/dev/null || true
 
 # ── OpenClaw gateway config (needed for non-loopback binding in Docker) ───────
-# Without this, openclaw refuses to start when --bind lan is set.
-# See: https://github.com/openclaw/openclaw/issues/25009
-if [[ ! -f "openclaw/config/settings.json" ]]; then
-  echo "   Writing OpenClaw gateway config (controlUi origin fallback)..."
-  cat > openclaw/config/settings.json <<'OCJSON'
-{
-  "gateway": {
-    "controlUi": {
-      "dangerouslyAllowHostHeaderOriginFallback": true
-    }
-  }
-}
-OCJSON
-  chown 1000:1000 openclaw/config/settings.json 2>/dev/null || true
-fi
+# Without controlUi.dangerouslyAllowHostHeaderOriginFallback, openclaw refuses
+# to start when --bind lan is set.  See: https://github.com/openclaw/openclaw/issues/25009
+#
+# If openclaw.json already exists (from a previous `openclaw setup`), patch it.
+# Otherwise create a minimal config. Uses python3 (always available on Ubuntu).
+echo "   Ensuring OpenClaw controlUi origin fallback is set..."
+python3 - <<'PYEOF'
+import json, pathlib, sys
+
+cfg_path = pathlib.Path("openclaw/config/openclaw.json")
+if cfg_path.exists():
+    cfg = json.loads(cfg_path.read_text())
+else:
+    cfg = {}
+
+gw = cfg.setdefault("gateway", {})
+cui = gw.setdefault("controlUi", {})
+if not cui.get("dangerouslyAllowHostHeaderOriginFallback"):
+    cui["dangerouslyAllowHostHeaderOriginFallback"] = True
+    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+    print("   → patched openclaw.json")
+else:
+    print("   → already set, skipping")
+PYEOF
+chown 1000:1000 openclaw/config/openclaw.json 2>/dev/null || true
 
 # ── Generate OpenClaw htpasswd (nginx basic auth) ─────────────────────────────
 echo "   Generating OpenClaw basic-auth credentials..."
