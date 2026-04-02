@@ -124,6 +124,18 @@ The Lite AWS setup runs cloud API models only (no local models) so it needs mini
 
 > For GPU-powered local models, use the [Custom Server](setup-custom-server.md) or [Hybrid](setup-hybrid.md) setup instead.
 
+### UserData (optional — automates server setup)
+
+In the EC2 launch wizard under **Advanced details → User data**, paste the contents of [`scripts/userdata-aws-lite.sh`](../scripts/userdata-aws-lite.sh). This runs once on first boot and automatically:
+
+- Installs Docker
+- Creates a 2 GB swap file (prevents OOM on t3.small)
+- Clones the repo to `/home/ubuntu/Rumis-AI-Lab`
+- Copies `.env.example` → `.env` (ready to fill in)
+- Enables automatic security updates
+
+After the instance starts (~3–5 min), SSH in and go straight to editing `.env`. Skip the manual install steps in Step 3.
+
 ### AMI
 
 Use **Ubuntu 24.04 LTS** (search for `ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server`).
