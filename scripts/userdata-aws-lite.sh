@@ -8,8 +8,7 @@
 # What this does automatically:
 #   - Updates system packages
 #   - Installs Docker (official method) and enables it on boot
-#   - Creates a 2 GB swap file (important: t3.small only has 2 GB RAM)
-#   - Creates required OpenClaw directories (once repo is cloned)
+#   - Creates a 2 GB swap file (safety net for memory spikes / image pulls)
 #   - Enables automatic security updates
 #
 # What you still do manually after SSH-ing in:
@@ -61,12 +60,6 @@ if [ ! -f /swapfile ]; then
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
     echo "Swap: 2 GB created and enabled"
 fi
-
-# ── Required directories ─────────────────────────────────────────────────────
-# Created here so they exist when the user clones the repo.
-# (openclaw bind-mounts these; Docker will error if they're missing)
-sudo -u ubuntu mkdir -p /home/ubuntu/Rumis-AI-Lab/openclaw/config \
-                        /home/ubuntu/Rumis-AI-Lab/openclaw/workspace
 
 # ── Automatic security updates ───────────────────────────────────────────────
 apt-get install -y unattended-upgrades
