@@ -36,6 +36,23 @@ mkdir -p openclaw/config openclaw/workspace
 # OpenClaw runs as uid 1000 (node user) — fix ownership so it can write config.
 chown -R 1000:1000 openclaw/ 2>/dev/null || true
 
+# ── OpenClaw gateway config (needed for non-loopback binding in Docker) ───────
+# Without this, openclaw refuses to start when --bind lan is set.
+# See: https://github.com/openclaw/openclaw/issues/25009
+if [[ ! -f "openclaw/config/settings.json" ]]; then
+  echo "   Writing OpenClaw gateway config (controlUi origin fallback)..."
+  cat > openclaw/config/settings.json <<'OCJSON'
+{
+  "gateway": {
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
+  }
+}
+OCJSON
+  chown 1000:1000 openclaw/config/settings.json 2>/dev/null || true
+fi
+
 # ── Generate OpenClaw htpasswd (nginx basic auth) ─────────────────────────────
 echo "   Generating OpenClaw basic-auth credentials..."
 HASH=$(openssl passwd -apr1 "${OC_AUTH_PASSWORD}")

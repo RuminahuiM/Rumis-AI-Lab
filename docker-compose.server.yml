@@ -200,7 +200,6 @@ services:
       - ./openclaw/workspace:/home/node/.openclaw/workspace
     environment:
       NODE_ENV: production
-      NODE_CONFIG: '{"gateway":{"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":true}}}'
     command:
       ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789", "--allow-unconfigured"]
     healthcheck:
