@@ -309,9 +309,10 @@ This script:
 4. Writes the full HTTPS nginx config and reloads nginx
 
 ```bash
-# Must be run from inside the project directory
+# Must be run from inside the project directory — note: no leading slash
 cd ~/Rumis-AI-Lab
 bash scripts/init-ssl.sh
+# or equivalently: bash ~/Rumis-AI-Lab/scripts/init-ssl.sh
 ```
 
 > **If you get `permission denied` on `docker`:** You need to re-login after Docker was installed so the `docker` group takes effect. Either `exit` and SSH back in, or run `newgrp docker` in the current session, then retry.
