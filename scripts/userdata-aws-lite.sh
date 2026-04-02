@@ -51,8 +51,8 @@ systemctl enable docker
 systemctl start docker
 
 # ── Swap (2 GB) ──────────────────────────────────────────────────────────────
-# t3.small has 2 GB RAM. LiteLLM + Open WebUI + n8n + nginx can exceed this
-# during image pulls or under load. Swap prevents OOM kills.
+# Recommended instance is t3.medium (4 GB RAM) but swap is added as a safety
+# net regardless — protects against OOM during image pulls and traffic spikes.
 if [ ! -f /swapfile ]; then
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
