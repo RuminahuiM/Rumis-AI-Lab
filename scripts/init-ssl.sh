@@ -282,8 +282,9 @@ server {
 }
 NGINX
 
-echo "   Reloading nginx..."
-docker compose exec nginx nginx -s reload
+echo "   Starting all services (nginx starts last once backends are healthy)..."
+docker compose stop nginx
+docker compose up -d
 
 echo ""
 echo "=========================================================================="
