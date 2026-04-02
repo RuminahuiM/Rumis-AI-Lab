@@ -12,7 +12,7 @@ A modular Docker Compose AI suite. Mix and match local models, cloud APIs, and d
 |---|---|---|---|---|
 | [**Local Full**](docs/setup-local.md) | Your machine / LAN | Yes (GPU rec.) | No (LAN only) | `bash scripts/up-local.sh` |
 | [**Custom Server**](docs/setup-custom-server.md) | Own / rented server | Yes (GPU rec.) | Yes (Let's Encrypt or BYO) | `docker compose -f docker-compose.server.yml up -d` |
-| [**Lite AWS**](docs/aws-ssl-setup.md) | AWS EC2 (t3.medium) | No | Yes (Let's Encrypt) | `docker compose up -d` |
+| [**Lite AWS**](docs/aws-ssl-setup.md) | AWS EC2 (m7i-flex.large) | No | Yes (Let's Encrypt) | `docker compose up -d` |
 | [**Hybrid AWS**](docs/setup-hybrid.md) | AWS + separate GPU server | On GPU server | Yes (both sides) | `docker compose up -d` + hybrid config |
 
 **Not sure which to pick?**

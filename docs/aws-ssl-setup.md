@@ -119,8 +119,9 @@ The Lite AWS setup runs cloud API models only (no local models) so it needs mini
 
 | Workload | Instance | vCPU | RAM | ~Cost | Notes |
 |----------|----------|------|-----|-------|-------|
-| **Lite AWS (recommended)** | `t3.medium` | 2 | 4 GB | ~$30/mo | Comfortable headroom for all 5 services |
-| Lite AWS (budget) | `t3.small` | 2 | 2 GB | ~$15/mo | Works but tight — needs swap, slower under load |
+| **Lite AWS (recommended)** | `m7i-flex.large` | 2 | 8 GB | ~$34/mo | Best value — double RAM vs t3.medium, same price, no CPU credit throttling |
+| Lite AWS (budget) | `t3.medium` | 2 | 4 GB | ~$34/mo | Fine, but T-series CPU throttles under sustained load |
+| Lite AWS (minimal) | `t3.small` | 2 | 2 GB | ~$15/mo | Too tight — needs swap, OOM risk during image pulls |
 
 > For GPU-powered local models, use the [Custom Server](setup-custom-server.md) or [Hybrid](setup-hybrid.md) setup instead.
 
