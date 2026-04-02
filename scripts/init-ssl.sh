@@ -66,7 +66,7 @@ NGINX
 # ── Step 2: start / reload nginx so certbot can reach the ACME endpoint ───────
 echo ""
 echo "── Step 2/4: Starting nginx..."
-docker compose up -d nginx
+docker compose up -d --no-deps nginx
 echo "   Waiting 5 s for nginx to be ready..."
 sleep 5
 
