@@ -9,16 +9,28 @@
 #   - Updates system packages
 #   - Installs Docker (official method) and enables it on boot
 #   - Creates a 2 GB swap file (important: t3.small only has 2 GB RAM)
-#   - Clones this repo to /home/ubuntu/Rumis-AI-Lab
-#   - Copies .env.example → .env (ready for you to fill in)
-#   - Creates required OpenClaw directories
+#   - Creates required OpenClaw directories (once repo is cloned)
 #   - Enables automatic security updates
 #
 # What you still do manually after SSH-ing in:
-#   1. nano /home/ubuntu/Rumis-AI-Lab/.env   — fill in API keys, domains, passwords
-#   2. Verify DNS (nslookup oui.yourdomain.com → must return this server's IP)
-#   3. bash scripts/init-ssl.sh              — issues Let's Encrypt certs
-#   4. docker compose up -d                  — start all services
+#   1. Clone the repo (see note below about private repos)
+#   2. cp .env.example .env && nano .env   — fill in API keys, domains, passwords
+#   3. Verify DNS (nslookup oui.yourdomain.com → must return this server's IP)
+#   4. bash scripts/init-ssl.sh            — issues Let's Encrypt certs
+#   5. docker compose up -d               — start all services
+#
+# NOTE — private repo / git clone:
+#   The git clone is NOT done here because embedding GitHub credentials in
+#   UserData is insecure (visible in AWS console + instance metadata endpoint).
+#   Clone manually after SSH-ing in using a Personal Access Token (PAT):
+#
+#     git clone https://<your-github-username>:<PAT>@github.com/RuminahuiM/Rumis-AI-Lab.git
+#
+#   Generate a PAT at: GitHub → Settings → Developer settings → Personal access tokens
+#   Scope needed: repo (read-only is enough for cloning)
+#
+#   If you later make the repo public, you can remove the PAT from the URL:
+#     git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
 
 set -euo pipefail
 exec > >(tee /var/log/userdata.log | logger -t userdata) 2>&1
@@ -50,19 +62,11 @@ if [ ! -f /swapfile ]; then
     echo "Swap: 2 GB created and enabled"
 fi
 
-# ── Clone repository ─────────────────────────────────────────────────────────
-REPO_DIR=/home/ubuntu/Rumis-AI-Lab
-if [ ! -d "$REPO_DIR" ]; then
-    sudo -u ubuntu git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git "$REPO_DIR"
-fi
-
-# ── Prepare .env ─────────────────────────────────────────────────────────────
-if [ ! -f "$REPO_DIR/.env" ]; then
-    sudo -u ubuntu cp "$REPO_DIR/.env.example" "$REPO_DIR/.env"
-fi
-
 # ── Required directories ─────────────────────────────────────────────────────
-sudo -u ubuntu mkdir -p "$REPO_DIR/openclaw/config" "$REPO_DIR/openclaw/workspace"
+# Created here so they exist when the user clones the repo.
+# (openclaw bind-mounts these; Docker will error if they're missing)
+sudo -u ubuntu mkdir -p /home/ubuntu/Rumis-AI-Lab/openclaw/config \
+                        /home/ubuntu/Rumis-AI-Lab/openclaw/workspace
 
 # ── Automatic security updates ───────────────────────────────────────────────
 apt-get install -y unattended-upgrades
@@ -81,6 +85,9 @@ echo "Repo        : $REPO_DIR"
 echo ""
 echo "Next steps:"
 echo "  ssh -i your-key.pem ubuntu@$PUBLIC_IP"
-echo "  nano $REPO_DIR/.env                   # fill in API keys, domains, passwords"
-echo "  cd $REPO_DIR && bash scripts/init-ssl.sh   # after DNS is propagated"
+echo "  git clone https://<user>:<PAT>@github.com/RuminahuiM/Rumis-AI-Lab.git ~/Rumis-AI-Lab"
+echo "  cd ~/Rumis-AI-Lab"
+echo "  cp .env.example .env && nano .env      # fill in API keys, domains, passwords"
+echo "  # verify DNS, then:"
+echo "  bash scripts/init-ssl.sh"
 echo "  docker compose up -d"

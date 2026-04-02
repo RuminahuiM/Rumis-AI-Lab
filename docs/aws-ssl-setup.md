@@ -134,7 +134,9 @@ In the EC2 launch wizard under **Advanced details → User data**, paste the con
 - Copies `.env.example` → `.env` (ready to fill in)
 - Enables automatic security updates
 
-After the instance starts (~3–5 min), SSH in and go straight to editing `.env`. Skip the manual install steps in Step 3.
+After the instance starts (~3–5 min), SSH in, clone the repo (see Step 4), and go straight to editing `.env`. Skip the manual Docker install steps in Step 3.
+
+> **Private repo:** UserData does not clone the repo automatically — embedding GitHub credentials in UserData is insecure (readable via the instance metadata endpoint). Clone manually after SSH-ing in using a PAT (see Step 4).
 
 ### AMI
 
@@ -247,10 +249,21 @@ docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
 
 ### Clone the repository
 
+**Public repo:**
 ```bash
 git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
 cd Rumis-AI-Lab
 ```
+
+**Private repo — use a Personal Access Token (PAT):**
+```bash
+# Generate at: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained
+# Scope needed: Contents = Read-only
+git clone https://<your-github-username>:<PAT>@github.com/RuminahuiM/Rumis-AI-Lab.git
+cd Rumis-AI-Lab
+```
+
+> The PAT is only used once for cloning. It is not stored anywhere on the server after the clone completes.
 
 ### Configure environment
 
