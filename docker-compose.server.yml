@@ -200,8 +200,9 @@ services:
       - ./openclaw/workspace:/home/node/.openclaw/workspace
     environment:
       NODE_ENV: production
+      NODE_CONFIG: '{"gateway":{"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":true}}}'
     command:
-      ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789", "--allow-unconfigured", "--dangerously-allow-host-header-origin-fallback"]
+      ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789", "--allow-unconfigured"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
