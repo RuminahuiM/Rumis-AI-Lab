@@ -190,7 +190,7 @@ services:
 
   # ─── OpenClaw Gateway ───────────────────────────────────────────────────────
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:2026.3.22
+    image: ghcr.io/openclaw/openclaw:2026.4.2
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:
@@ -295,7 +295,7 @@ services:
 
   # ─── OpenClaw CLI (on-demand) ───────────────────────────────────────────────
   openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:2026.3.22
+    image: ghcr.io/openclaw/openclaw:2026.4.2
     container_name: openclaw-cli
     volumes:
       - ./openclaw/config:/home/node/.openclaw
