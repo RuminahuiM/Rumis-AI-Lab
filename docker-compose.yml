@@ -325,6 +325,8 @@ services:
         condition: service_healthy
       n8n:
         condition: service_healthy
+      hermes-gateway:
+        condition: service_healthy
     logging:
       driver: json-file
       options:
@@ -349,6 +351,80 @@ services:
       options:
         max-size: "5m"
         max-file: "3"
+
+  # ─── Hermes Agent (Nous Research) ────────────────────────────────────────────
+  # Persistent AI agent with memory, self-learning (GEPA), and multi-agent support.
+  # Alternative to OpenClaw — runs alongside it for gradual migration.
+  # First-time setup: see docs/hermes-setup.md
+  # Web UI:  https://<HERMES_DOMAIN>  (basic auth via nginx)
+  # API:     http://hermes-gateway:8642  (internal Docker network only)
+  hermes-gateway:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    image: rumis-hermes:latest          # local tag; rebuild with: docker compose build hermes-gateway
+    container_name: hermes-gateway
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8642:8642"           # localhost-only; public access via nginx HTTPS
+    volumes:
+      - ./hermes/data:/opt/hermes-data  # persistent config, memories, sessions, skills
+    environment:
+      # All model access routed through LiteLLM — zero API keys in this container.
+      OPENAI_BASE_URL: "http://litellm:4000/v1"
+      OPENAI_API_KEY: "sk-no-key-needed"
+      GATEWAY_ALLOW_ALL_USERS: "false"
+      TERMINAL_ENV: "local"
+    depends_on:
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8642/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - frontend-net
+      - backend-net
+
+  # ─── Hermes CLI (management, runs on-demand only) ─────────────────────────────
+  # Usage: docker compose run --rm hermes-cli setup
+  #        docker compose run --rm hermes-cli model
+  #        docker compose run --rm hermes-cli status
+  #        docker compose run --rm hermes-cli claw migrate --dry-run
+  hermes-cli:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    image: rumis-hermes:latest
+    container_name: hermes-cli
+    volumes:
+      - ./hermes/data:/opt/hermes-data
+    environment:
+      OPENAI_BASE_URL: "http://litellm:4000/v1"
+      OPENAI_API_KEY: "sk-no-key-needed"
+      GATEWAY_ALLOW_ALL_USERS: "false"
+      TERMINAL_ENV: "local"
+    stdin_open: true
+    tty: true
+    entrypoint: ["hermes"]
+    network_mode: "service:hermes-gateway"
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - cli
+    depends_on:
+      hermes-gateway:
+        condition: service_healthy
 
   # ─── OpenClaw CLI (management, runs on-demand only) ───────────────────────
   openclaw-cli:

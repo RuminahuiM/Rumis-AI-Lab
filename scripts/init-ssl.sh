@@ -21,12 +21,16 @@ N8N_DOMAIN="${N8N_DOMAIN:?'N8N_DOMAIN is not set. Add it to your .env file (e.g.
 CERTBOT_EMAIL="${CERTBOT_EMAIL:?'CERTBOT_EMAIL is not set. Add it to your .env file (e.g. CERTBOT_EMAIL=you@example.com)'}"
 OC_AUTH_USER="${OC_AUTH_USER:?'OC_AUTH_USER is not set. Add it to your .env file (e.g. OC_AUTH_USER=admin)'}"
 OC_AUTH_PASSWORD="${OC_AUTH_PASSWORD:?'OC_AUTH_PASSWORD is not set. Add it to your .env file (e.g. OC_AUTH_PASSWORD=yourpassword)'}"
+HERMES_DOMAIN="${HERMES_DOMAIN:?'HERMES_DOMAIN is not set. Add it to your .env file (e.g. HERMES_DOMAIN=hermes.mydomain.ch)'}"
+HERMES_AUTH_USER="${HERMES_AUTH_USER:?'HERMES_AUTH_USER is not set. Add it to your .env file (e.g. HERMES_AUTH_USER=admin)'}"
+HERMES_AUTH_PASSWORD="${HERMES_AUTH_PASSWORD:?'HERMES_AUTH_PASSWORD is not set. Add it to your .env file (e.g. HERMES_AUTH_PASSWORD=yourpassword)'}"
 
 echo "==========================================================================
   Rumis AI Lab – SSL bootstrap
   Open WebUI : https://${OUI_DOMAIN}
   OpenClaw   : https://${OC_DOMAIN}
   n8n        : https://${N8N_DOMAIN}
+  Hermes     : https://${HERMES_DOMAIN}
   Email      : ${CERTBOT_EMAIL}
 =========================================================================="
 
@@ -63,12 +67,23 @@ else:
 PYEOF
 chown 1000:1000 openclaw/config/openclaw.json 2>/dev/null || true
 
+# Hermes runs as uid 1001 — fix ownership so it can write config and memories.
+mkdir -p hermes/data
+chown -R 1001:1001 hermes/ 2>/dev/null || true
+
 # ── Generate OpenClaw htpasswd (nginx basic auth) ─────────────────────────────
 echo "   Generating OpenClaw basic-auth credentials..."
 HASH=$(openssl passwd -apr1 "${OC_AUTH_PASSWORD}")
 printf '%s:%s\n' "${OC_AUTH_USER}" "${HASH}" > nginx/auth/openclaw.htpasswd
 chmod 600 nginx/auth/openclaw.htpasswd
 echo "   htpasswd written to nginx/auth/openclaw.htpasswd (user: ${OC_AUTH_USER})"
+
+# ── Generate Hermes htpasswd (nginx basic auth) ───────────────────────────────
+echo "   Generating Hermes basic-auth credentials..."
+HERMES_HASH=$(openssl passwd -apr1 "${HERMES_AUTH_PASSWORD}")
+printf '%s:%s\n' "${HERMES_AUTH_USER}" "${HERMES_HASH}" > nginx/auth/hermes.htpasswd
+chmod 600 nginx/auth/hermes.htpasswd
+echo "   htpasswd written to nginx/auth/hermes.htpasswd (user: ${HERMES_AUTH_USER})"
 
 # ── Step 1: write HTTP-only nginx config (needed for ACME challenge) ──────────
 echo ""
@@ -78,7 +93,7 @@ cat > nginx/conf.d/app.conf <<NGINX
 # HTTP – Let's Encrypt ACME challenge + temporary 503
 server {
     listen 80;
-    server_name ${OUI_DOMAIN} ${OC_DOMAIN} ${N8N_DOMAIN};
+    server_name ${OUI_DOMAIN} ${OC_DOMAIN} ${N8N_DOMAIN} ${HERMES_DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -129,6 +144,17 @@ docker compose run --rm --entrypoint certbot certbot certonly \
   --no-eff-email \
   -d "${N8N_DOMAIN}"
 
+echo ""
+echo "── Step 3/4: Requesting certificate for ${HERMES_DOMAIN}..."
+docker compose run --rm --entrypoint certbot certbot certonly \
+  --webroot \
+  --webroot-path=/var/www/certbot \
+  --email "${CERTBOT_EMAIL}" \
+  --agree-tos \
+  --no-eff-email \
+  --keep-until-expiring \
+  -d "${HERMES_DOMAIN}"
+
 # ── Step 4: write full HTTPS nginx config and reload ─────────────────────────
 echo ""
 echo "── Step 4/4: Writing HTTPS nginx config and reloading..."
@@ -172,7 +198,7 @@ map \$http_upgrade \$connection_upgrade {
 # ── HTTP → HTTPS redirect + Let's Encrypt renewal challenge ──────────────────
 server {
     listen 80;
-    server_name ${OUI_DOMAIN} ${OC_DOMAIN} ${N8N_DOMAIN};
+    server_name ${OUI_DOMAIN} ${OC_DOMAIN} ${N8N_DOMAIN} ${HERMES_DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -308,6 +334,50 @@ server {
         proxy_send_timeout 3600s;
     }
 }
+
+# ── Hermes Agent  →  https://${HERMES_DOMAIN} ────────────────────────────────
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${HERMES_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${HERMES_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${HERMES_DOMAIN}/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options           "SAMEORIGIN"   always;
+    add_header X-Content-Type-Options    "nosniff"      always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy   "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' wss: https: ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self';" always;
+
+    client_max_body_size 20M;
+
+    # Basic auth – first line of defence before Hermes gateway's own auth.
+    # Credentials set via HERMES_AUTH_USER / HERMES_AUTH_PASSWORD in .env.
+    auth_basic           "Hermes Agent";
+    auth_basic_user_file /etc/nginx/auth/hermes.htpasswd;
+
+    location / {
+        proxy_pass         http://hermes-gateway:8642;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+
+        # Disable buffering – required for streaming agent responses
+        proxy_buffering    off;
+
+        # WebSocket support (required by Hermes gateway)
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    \$http_upgrade;
+        proxy_set_header   Connection \$connection_upgrade;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}
 NGINX
 
 echo "   Stopping nginx (full stack starts via 'docker compose up -d' next)..."
@@ -320,6 +390,7 @@ echo ""
 echo "  Open WebUI  →  https://${OUI_DOMAIN}"
 echo "  OpenClaw    →  https://${OC_DOMAIN}"
 echo "  n8n         →  https://${N8N_DOMAIN}"
+echo "  Hermes      →  https://${HERMES_DOMAIN}"
 echo ""
 echo "  Certificates auto-renew every 12 h via the certbot container."
 echo "=========================================================================="

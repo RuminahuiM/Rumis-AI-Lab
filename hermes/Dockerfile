@@ -1,0 +1,50 @@
+# =============================================================================
+# Hermes Agent – lean production image for AWS t3.small
+# Based on python:3.11-slim (not the upstream debian:13.4 full build).
+#
+# Excluded intentionally to keep image under ~300 MB and fit t3.small (2 GB RAM):
+#   - Playwright / browser automation  (~500 MB Chromium)
+#   - WhatsApp bridge                  (~200 MB Node.js)
+#
+# If you need browser tools, build from the upstream image instead:
+#   https://github.com/NousResearch/hermes-agent
+# =============================================================================
+FROM python:3.11-slim
+
+# System deps: git (hermes update), ripgrep (code-search tool), curl (healthcheck)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git ripgrep curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user — uid 1001 to avoid collision with OpenClaw's uid 1000 (node user)
+RUN groupadd -g 1001 hermes && \
+    useradd -u 1001 -g hermes -m -s /bin/bash hermes
+
+# Install hermes-agent from PyPI.
+# If the PyPI release is stale, swap for the git source:
+#   RUN pip install --no-cache-dir "git+https://github.com/NousResearch/hermes-agent.git"
+RUN pip install --no-cache-dir "hermes-agent"
+
+# Runtime data directory — matches HERMES_HOME env var below
+RUN mkdir -p /opt/hermes-data && chown 1001:1001 /opt/hermes-data
+
+# Pre-seed config: points the agent at LiteLLM so the setup wizard only needs
+# to confirm settings rather than fill them in from scratch.
+COPY --chown=hermes:hermes seed-config.yaml /opt/hermes-data/config.yaml
+
+USER hermes
+WORKDIR /home/hermes
+
+ENV HERMES_HOME=/opt/hermes-data
+
+VOLUME ["/opt/hermes-data"]
+
+# Gateway port (confirmed from hermes-workspace docker-compose.yml)
+EXPOSE 8642
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=60s \
+    CMD curl -sf http://localhost:8642/health || exit 1
+
+# Start the gateway in foreground; --replace prevents restart loops
+CMD ["hermes", "gateway", "run"]

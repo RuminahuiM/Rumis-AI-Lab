@@ -1,0 +1,33 @@
+# =============================================================================
+# Hermes Agent – seed configuration
+# Copied into the Docker image at /opt/hermes-data/config.yaml.
+# Pre-fills the LiteLLM backend and n8n MCP endpoint so the setup wizard
+# only needs to confirm settings rather than enter them from scratch.
+#
+# Run the setup wizard once after first start:
+#   docker compose run --rm hermes-cli setup
+# =============================================================================
+
+model:
+  # Must match a model_name defined in litellm-config.yaml
+  default: "claude-sonnet-4.6"
+  provider: "openai"
+  # LiteLLM proxy — all cloud models (Claude, GPT, Gemini) available here,
+  # no API keys needed inside the Hermes container.
+  base_url: "http://litellm:4000/v1"
+
+# n8n MCP server — gives Hermes access to 400+ workflow tools
+# (Gmail, Slack, GitHub, Postgres, HTTP, etc.)
+# Configure workflows at https://<N8N_DOMAIN>  (see docs/n8n-mcp-setup.md)
+mcp_servers:
+  n8n:
+    url: "http://n8n:5678/mcp"
+
+memory:
+  enabled: true
+
+# Compress long contexts before they exceed the model's window.
+# threshold: 0.5 = compress when context is 50% full.
+context_compression:
+  enabled: true
+  threshold: 0.5
