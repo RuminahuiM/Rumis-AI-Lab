@@ -282,9 +282,8 @@ server {
 }
 NGINX
 
-echo "   Starting all services (nginx starts last once backends are healthy)..."
+echo "   Stopping nginx (full stack starts via 'docker compose up -d' next)..."
 docker compose stop nginx
-docker compose up -d
 
 echo ""
 echo "=========================================================================="
