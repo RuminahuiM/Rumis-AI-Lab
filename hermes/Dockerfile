@@ -21,10 +21,11 @@ RUN apt-get update && \
 RUN groupadd -g 1001 hermes && \
     useradd -u 1001 -g hermes -m -s /bin/bash hermes
 
-# Install hermes-agent from PyPI.
-# If the PyPI release is stale, swap for the git source:
-#   RUN pip install --no-cache-dir "git+https://github.com/NousResearch/hermes-agent.git"
-RUN pip install --no-cache-dir "hermes-agent"
+# Install hermes-agent from source (not published on PyPI).
+# Uses uv for fast dependency resolution, matching the upstream dev workflow.
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache \
+        "git+https://github.com/NousResearch/hermes-agent.git"
 
 # Runtime data directory — matches HERMES_HOME env var below
 RUN mkdir -p /opt/hermes-data && chown 1001:1001 /opt/hermes-data
