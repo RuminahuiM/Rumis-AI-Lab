@@ -11,10 +11,11 @@
 # =============================================================================
 FROM python:3.11-slim
 
-# System deps: git (hermes update), ripgrep (code-search tool), curl (healthcheck)
+# System deps: git (hermes update), ripgrep (code-search tool), curl (healthcheck),
+# gosu (entrypoint privilege drop — fixes bind-mount ownership from host root)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        git ripgrep curl \
+        git ripgrep curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user — uid 1001 to avoid collision with OpenClaw's uid 1000 (node user)
@@ -34,7 +35,11 @@ RUN mkdir -p /opt/hermes-data && chown 1001:1001 /opt/hermes-data
 # to confirm settings rather than fill them in from scratch.
 COPY --chown=hermes:hermes seed-config.yaml /opt/hermes-data/config.yaml
 
-USER hermes
+# Entrypoint: runs as root, chowns the bind-mount, then drops to hermes (uid 1001)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Stay as root — entrypoint handles the privilege drop via gosu
 WORKDIR /home/hermes
 
 ENV HERMES_HOME=/opt/hermes-data
@@ -47,5 +52,6 @@ EXPOSE 8642
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=60s \
     CMD curl -sf http://localhost:8642/health || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 # Start the gateway in foreground; --replace prevents restart loops
 CMD ["hermes", "gateway", "run"]

@@ -68,8 +68,10 @@ PYEOF
 chown 1000:1000 openclaw/config/openclaw.json 2>/dev/null || true
 
 # Hermes runs as uid 1001 — fix ownership so it can write config and memories.
+# Uses sudo because the ubuntu user (uid 1000) cannot chown to a different uid.
+# The container entrypoint also re-applies chown at startup as a fallback.
 mkdir -p hermes/data
-chown -R 1001:1001 hermes/ 2>/dev/null || true
+sudo chown -R 1001:1001 hermes/ 2>/dev/null || true
 
 # ── Generate OpenClaw htpasswd (nginx basic auth) ─────────────────────────────
 echo "   Generating OpenClaw basic-auth credentials..."
