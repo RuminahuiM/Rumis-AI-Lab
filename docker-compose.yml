@@ -368,22 +368,24 @@ services:
     ports:
       - "127.0.0.1:8642:8642"           # localhost-only; public access via nginx HTTPS
     volumes:
-      - ./hermes/data:/opt/hermes-data  # persistent config, memories, sessions, skills
+      - ./hermes/data:/opt/hermes-data        # persistent config, memories, sessions, skills
+      - ./hermes/hermes.env:/opt/hermes-data/hermes.env:ro  # runtime env (GATEWAY_ALLOW_ALL_USERS etc.)
     environment:
       # All model access routed through LiteLLM — zero API keys in this container.
       OPENAI_BASE_URL: "http://litellm:4000/v1"
       OPENAI_API_KEY: "sk-no-key-needed"
-      GATEWAY_ALLOW_ALL_USERS: "false"
       TERMINAL_ENV: "local"
     depends_on:
       litellm:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8642/health || exit 1"]
+      # Process check — HTTP API on :8642 only becomes available after 'hermes setup'.
+      # Once setup is complete this can be tightened to: curl -sf http://localhost:8642/health
+      test: ["CMD-SHELL", "pgrep -f 'hermes' > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -406,6 +408,7 @@ services:
     container_name: hermes-cli
     volumes:
       - ./hermes/data:/opt/hermes-data
+      - ./hermes/hermes.env:/opt/hermes-data/hermes.env:ro
     environment:
       OPENAI_BASE_URL: "http://litellm:4000/v1"
       OPENAI_API_KEY: "sk-no-key-needed"
