@@ -369,7 +369,7 @@ services:
       - "127.0.0.1:8642:8642"           # localhost-only; public access via nginx HTTPS
     volumes:
       - ./hermes/data:/opt/hermes-data        # persistent config, memories, sessions, skills
-      - ./hermes/hermes.env:/opt/hermes-data/hermes.env:ro  # runtime env (GATEWAY_ALLOW_ALL_USERS etc.)
+      - ./hermes/hermes.env:/hermes.env:ro    # runtime env (GATEWAY_ALLOW_ALL_USERS etc.) — outside data dir to avoid chown conflict
     environment:
       # All model access routed through LiteLLM — zero API keys in this container.
       OPENAI_BASE_URL: "http://litellm:4000/v1"
@@ -408,7 +408,7 @@ services:
     container_name: hermes-cli
     volumes:
       - ./hermes/data:/opt/hermes-data
-      - ./hermes/hermes.env:/opt/hermes-data/hermes.env:ro
+      - ./hermes/hermes.env:/hermes.env:ro
     environment:
       OPENAI_BASE_URL: "http://litellm:4000/v1"
       OPENAI_API_KEY: "sk-no-key-needed"
