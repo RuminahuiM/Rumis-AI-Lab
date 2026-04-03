@@ -284,7 +284,9 @@ services:
       N8N_PROTOCOL: "https"
       WEBHOOK_URL: "https://${N8N_DOMAIN:-localhost}/"
       N8N_PROXY_HOPS: "1"
+      N8N_SECURE_COOKIE: "false"
       GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
+      N8N_LICENSE_ACTIVATION_KEY: "${N8N_LICENSE_KEY:-}"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
