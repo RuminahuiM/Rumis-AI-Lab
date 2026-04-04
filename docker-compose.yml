@@ -326,7 +326,7 @@ services:
       n8n:
         condition: service_healthy
       hermes-gateway:
-        condition: service_healthy
+        condition: service_started   # not service_healthy — gateway sleeps until 'hermes setup' is run
     logging:
       driver: json-file
       options:
@@ -379,13 +379,13 @@ services:
       litellm:
         condition: service_healthy
     healthcheck:
-      # Process check — HTTP API on :8642 only becomes available after 'hermes setup'.
-      # Once setup is complete this can be tightened to: curl -sf http://localhost:8642/health
-      test: ["CMD-SHELL", "pgrep -f 'hermes' > /dev/null || exit 1"]
+      # Container is always healthy once running. The gateway itself may sleep
+      # until 'hermes setup' is completed and a messaging platform is configured.
+      test: ["CMD", "true"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
     logging:
       driver: json-file
       options:
@@ -427,7 +427,7 @@ services:
       - cli
     depends_on:
       hermes-gateway:
-        condition: service_healthy
+        condition: service_started
 
   # ─── OpenClaw CLI (management, runs on-demand only) ───────────────────────
   openclaw-cli:

@@ -49,9 +49,11 @@ VOLUME ["/opt/hermes-data"]
 # Gateway port (confirmed from hermes-workspace docker-compose.yml)
 EXPOSE 8642
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=60s \
-    CMD curl -sf http://localhost:8642/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+    CMD true
 
 ENTRYPOINT ["/entrypoint.sh"]
-# Start the gateway in foreground; --replace prevents restart loops
-CMD ["hermes", "gateway", "run"]
+# hermes gateway run exits immediately if no messaging platforms are configured
+# (expected before 'hermes setup' is run). The wrapper falls back to sleep so
+# the container stays alive and ready for CLI commands.
+CMD ["/bin/sh", "-c", "hermes gateway run || { echo 'Hermes gateway stopped — run: docker compose run --rm hermes-cli setup, then restart this container'; exec sleep infinity; }"]

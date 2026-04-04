@@ -5,8 +5,8 @@
 set -e
 
 # Fix bind-mount ownership (host creates hermes/data/ as root, container uid 1001
-# can't write to it without this). hermes.env is mounted separately at /hermes.env
-# (read-only, outside the data dir) so it is not touched by this chown.
+# can't write to it without this). hermes.env is mounted at /hermes.env (outside
+# the data dir) so it is not touched by this chown.
 chown -R hermes:hermes /opt/hermes-data
 
 # Copy runtime env into HERMES_HOME so hermes picks up GATEWAY_ALLOW_ALL_USERS etc.
@@ -16,5 +16,5 @@ if [ -f /hermes.env ]; then
     chown hermes:hermes /opt/hermes-data/.env
 fi
 
-# Drop privileges and exec the actual command (hermes gateway run, or CLI args)
+# Drop privileges and exec the actual command
 exec gosu hermes "$@"
