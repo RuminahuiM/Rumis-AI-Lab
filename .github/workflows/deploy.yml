@@ -1,0 +1,399 @@
+name: Deploy to AWS EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm full redeploy (old instance will be terminated)'
+        required: true
+        default: ''
+
+jobs:
+  deploy:
+    name: Provision & Deploy
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'deploy'
+
+    env:
+      AWS_REGION: eu-north-1
+      INSTANCE_TYPE: m7i-flex.large
+      VOLUME_SIZE: "50"
+      PROJECT_TAG: RumisAILab
+      ROLE_NAME: RumisAILabEC2Role
+      PROFILE_NAME: RumisAILabEC2Profile
+      SG_NAME: rumis-ai-lab-sg
+      REPO: RuminahuiM/Rumis-AI-Lab
+
+    steps:
+      # ── 1. Checkout (for UserData script) ──────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Configure AWS credentials ───────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── 3. Idempotent IAM role + instance profile ───────────────────────────
+      - name: Ensure SSM IAM role exists
+        run: |
+          set -euo pipefail
+
+          TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+
+          if ! aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
+            echo "Creating IAM role $ROLE_NAME..."
+            aws iam create-role \
+              --role-name "$ROLE_NAME" \
+              --assume-role-policy-document "$TRUST" \
+              --tags Key=Project,Value="$PROJECT_TAG"
+          else
+            echo "IAM role $ROLE_NAME already exists."
+          fi
+
+          aws iam attach-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore \
+            2>/dev/null || true
+
+          if ! aws iam get-instance-profile --instance-profile-name "$PROFILE_NAME" &>/dev/null; then
+            echo "Creating instance profile $PROFILE_NAME..."
+            aws iam create-instance-profile \
+              --instance-profile-name "$PROFILE_NAME"
+            aws iam add-role-to-instance-profile \
+              --instance-profile-name "$PROFILE_NAME" \
+              --role-name "$ROLE_NAME"
+            echo "Waiting 15 s for IAM profile to propagate..."
+            sleep 15
+          else
+            echo "Instance profile $PROFILE_NAME already exists."
+          fi
+
+      # ── 4. Tear down old instance ───────────────────────────────────────────
+      - name: Tear down old instance
+        run: |
+          set -euo pipefail
+
+          OLD_IDS=$(aws ec2 describe-instances \
+            --filters \
+              "Name=tag:Project,Values=$PROJECT_TAG" \
+              "Name=instance-state-name,Values=running,pending,stopping,stopped" \
+            --query "Reservations[].Instances[].InstanceId" \
+            --output text)
+
+          if [[ -z "$OLD_IDS" ]]; then
+            echo "No existing instances found — fresh deploy."
+            exit 0
+          fi
+
+          echo "Found old instance(s): $OLD_IDS"
+
+          ALLOC_ID="${{ secrets.AWS_ELASTIC_IP_ALLOCATION_ID }}"
+          ASSOC_ID=$(aws ec2 describe-addresses \
+            --allocation-ids "$ALLOC_ID" \
+            --query "Addresses[0].AssociationId" \
+            --output text 2>/dev/null || echo "None")
+
+          if [[ -n "$ASSOC_ID" && "$ASSOC_ID" != "None" && "$ASSOC_ID" != "null" ]]; then
+            echo "Disassociating Elastic IP (assoc: $ASSOC_ID)..."
+            aws ec2 disassociate-address --association-id "$ASSOC_ID"
+          fi
+
+          echo "Terminating: $OLD_IDS"
+          aws ec2 terminate-instances --instance-ids $OLD_IDS
+          aws ec2 wait instance-terminated --instance-ids $OLD_IDS
+          echo "Old instance(s) terminated."
+
+      # ── 5. Resolve latest Ubuntu 24.04 LTS AMI ─────────────────────────────
+      - name: Resolve Ubuntu 24.04 LTS AMI
+        id: ami
+        run: |
+          AMI_ID=$(aws ec2 describe-images \
+            --owners 099720109477 \
+            --filters \
+              "Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*" \
+              "Name=state,Values=available" \
+            --query "sort_by(Images,&CreationDate)[-1].ImageId" \
+            --output text)
+          echo "Resolved AMI: $AMI_ID"
+          echo "id=$AMI_ID" >> "$GITHUB_OUTPUT"
+
+      # ── 6. Ensure security group ────────────────────────────────────────────
+      - name: Ensure security group
+        id: sg
+        run: |
+          set -euo pipefail
+
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=isDefault,Values=true" \
+            --query "Vpcs[0].VpcId" --output text)
+          echo "Default VPC: $VPC_ID"
+
+          SG_ID=$(aws ec2 describe-security-groups \
+            --filters \
+              "Name=group-name,Values=$SG_NAME" \
+              "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[0].GroupId" \
+            --output text 2>/dev/null || echo "None")
+
+          if [[ -z "$SG_ID" || "$SG_ID" == "None" ]]; then
+            echo "Creating security group $SG_NAME..."
+            SG_ID=$(aws ec2 create-security-group \
+              --group-name "$SG_NAME" \
+              --description "Rumis AI Lab – HTTP/HTTPS/SSH" \
+              --vpc-id "$VPC_ID" \
+              --query "GroupId" --output text)
+            aws ec2 create-tags \
+              --resources "$SG_ID" \
+              --tags Key=Project,Value="$PROJECT_TAG" Key=Name,Value="$SG_NAME"
+            aws ec2 authorize-security-group-ingress \
+              --group-id "$SG_ID" \
+              --ip-permissions \
+                'IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=0.0.0.0/0}]' \
+                'IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges=[{CidrIp=0.0.0.0/0}]' \
+                'IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=0.0.0.0/0}]'
+            echo "Security group created: $SG_ID"
+          else
+            echo "Security group already exists: $SG_ID"
+          fi
+
+          echo "id=$SG_ID" >> "$GITHUB_OUTPUT"
+
+      # ── 7. Launch EC2 instance ──────────────────────────────────────────────
+      - name: Launch EC2 instance
+        id: ec2
+        run: |
+          set -euo pipefail
+
+          USERDATA_B64=$(base64 -w0 scripts/userdata-aws-lite.sh)
+
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id "${{ steps.ami.outputs.id }}" \
+            --instance-type "$INSTANCE_TYPE" \
+            --security-group-ids "${{ steps.sg.outputs.id }}" \
+            --iam-instance-profile "Name=$PROFILE_NAME" \
+            --block-device-mappings \
+              "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":$VOLUME_SIZE,\"VolumeType\":\"gp3\",\"DeleteOnTermination\":true}}]" \
+            --user-data "$USERDATA_B64" \
+            --metadata-options "HttpTokens=required,HttpEndpoint=enabled" \
+            --tag-specifications \
+              "ResourceType=instance,Tags=[{Key=Name,Value=$PROJECT_TAG},{Key=Project,Value=$PROJECT_TAG}]" \
+              "ResourceType=volume,Tags=[{Key=Project,Value=$PROJECT_TAG}]" \
+            --query "Instances[0].InstanceId" \
+            --output text)
+
+          echo "Launched instance: $INSTANCE_ID"
+          echo "id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+          echo "Waiting for instance to be running..."
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+          echo "Instance is running."
+
+      # ── 8. Associate Elastic IP ─────────────────────────────────────────────
+      - name: Associate Elastic IP
+        id: eip
+        run: |
+          set -euo pipefail
+
+          ALLOC_ID="${{ secrets.AWS_ELASTIC_IP_ALLOCATION_ID }}"
+          aws ec2 associate-address \
+            --instance-id "${{ steps.ec2.outputs.id }}" \
+            --allocation-id "$ALLOC_ID"
+
+          PUBLIC_IP=$(aws ec2 describe-addresses \
+            --allocation-ids "$ALLOC_ID" \
+            --query "Addresses[0].PublicIp" --output text)
+          echo "Elastic IP associated: $PUBLIC_IP"
+          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+
+      # ── 9. Wait for SSM agent ───────────────────────────────────────────────
+      - name: Wait for SSM agent
+        run: |
+          set -euo pipefail
+
+          INSTANCE_ID="${{ steps.ec2.outputs.id }}"
+          echo "Waiting for SSM agent on $INSTANCE_ID (up to 8 min)..."
+
+          for i in $(seq 1 48); do
+            PING=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text 2>/dev/null || echo "")
+            if [[ "$PING" == "Online" ]]; then
+              echo "SSM agent online after ~$((i * 10)) s"
+              exit 0
+            fi
+            echo "  attempt $i/48 — ping: ${PING:-not-registered-yet}"
+            sleep 10
+          done
+
+          echo "ERROR: SSM agent did not come online within 8 minutes."
+          exit 1
+
+      # ── 10. Build deploy script and send via SSM ────────────────────────────
+      - name: Deploy stack via SSM
+        id: ssm
+        env:
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY:     ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY:     ${{ secrets.GEMINI_API_KEY }}
+          HF_TOKEN:           ${{ secrets.HF_TOKEN }}
+          LITELLM_MASTER_KEY: ${{ secrets.LITELLM_MASTER_KEY }}
+          OUI_DOMAIN:         ${{ secrets.OUI_DOMAIN }}
+          OC_DOMAIN:          ${{ secrets.OC_DOMAIN }}
+          CERTBOT_EMAIL:      ${{ secrets.CERTBOT_EMAIL }}
+          OC_AUTH_USER:       ${{ secrets.OC_AUTH_USER }}
+          OC_AUTH_PASSWORD:   ${{ secrets.OC_AUTH_PASSWORD }}
+          GH_PAT:             ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+
+          # Write deploy script to a temp file on the runner.
+          # Secrets are injected via env vars — GitHub Actions redacts them in logs.
+          cat > /tmp/deploy.sh << 'SCRIPT_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec > >(tee /var/log/rumis-deploy.log) 2>&1
+          echo "=== Rumis AI Lab deploy started at $(date) ==="
+
+          REPO_DIR="/home/ubuntu/Rumis-AI-Lab"
+
+          # Wait for Docker (UserData may still be running)
+          echo "Waiting for Docker..."
+          for i in $(seq 1 30); do
+            command -v docker && docker info &>/dev/null && break
+            echo "  attempt $i/30..."
+            sleep 10
+          done
+          docker --version
+
+          # Clone repo (remove any stale copy)
+          rm -rf "$REPO_DIR"
+          sudo -u ubuntu git clone \
+            "https://__GH_PAT__@github.com/__REPO__" \
+            "$REPO_DIR"
+
+          # Write .env (permissions set before content to avoid race)
+          touch "$REPO_DIR/.env"
+          chown ubuntu:ubuntu "$REPO_DIR/.env"
+          chmod 600 "$REPO_DIR/.env"
+
+          cat > "$REPO_DIR/.env" << 'ENV_EOF'
+          __ENV_BLOCK__
+          ENV_EOF
+
+          # SSL bootstrap
+          cd "$REPO_DIR"
+          sudo -u ubuntu bash scripts/init-ssl.sh
+
+          # Start stack
+          sudo -u ubuntu docker compose up -d
+
+          echo "=== Deploy complete at $(date) ==="
+          SCRIPT_EOF
+
+          # Build .env block (newlines are safe inside heredoc)
+          ENV_BLOCK="ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+          OPENAI_API_KEY=${OPENAI_API_KEY}
+          GEMINI_API_KEY=${GEMINI_API_KEY}
+          HF_TOKEN=${HF_TOKEN}
+          LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+          OUI_DOMAIN=${OUI_DOMAIN}
+          OC_DOMAIN=${OC_DOMAIN}
+          CERTBOT_EMAIL=${CERTBOT_EMAIL}
+          OC_AUTH_USER=${OC_AUTH_USER}
+          OC_AUTH_PASSWORD=${OC_AUTH_PASSWORD}"
+
+          # Substitute placeholders (use printf to avoid sed special chars in secrets)
+          python3 - << PYEOF
+          import os, pathlib
+
+          script = pathlib.Path('/tmp/deploy.sh').read_text()
+          script = script.replace('__GH_PAT__',    os.environ['GH_PAT'])
+          script = script.replace('__REPO__',       os.environ['REPO'])
+          script = script.replace('__ENV_BLOCK__',  os.environ['ENV_BLOCK'])
+          pathlib.Path('/tmp/deploy.sh').write_text(script)
+          PYEOF
+
+          # Base64-encode so the content is safe to pass as a single SSM command
+          SCRIPT_B64=$(base64 -w0 /tmp/deploy.sh)
+
+          INSTANCE_ID="${{ steps.ec2.outputs.id }}"
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Rumis AI Lab deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --timeout-seconds 900 \
+            --parameters "commands=[\"echo '${SCRIPT_B64}' | base64 -d > /tmp/deploy.sh && bash /tmp/deploy.sh\"]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "SSM command ID: $CMD_ID"
+          echo "id=$CMD_ID" >> "$GITHUB_OUTPUT"
+
+      # ── 11. Poll SSM command ────────────────────────────────────────────────
+      - name: Wait for deploy to complete
+        run: |
+          set -euo pipefail
+
+          CMD_ID="${{ steps.ssm.outputs.id }}"
+          INSTANCE_ID="${{ steps.ec2.outputs.id }}"
+          echo "Polling SSM command $CMD_ID (timeout: 15 min)..."
+
+          for i in $(seq 1 90); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+
+            echo "  [$i/90] status: $STATUS"
+
+            case "$STATUS" in
+              Success)
+                echo "Deploy succeeded."
+                aws ssm get-command-invocation \
+                  --command-id "$CMD_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query "StandardOutputContent" \
+                  --output text | tail -60
+                exit 0
+                ;;
+              Failed|Cancelled|TimedOut|Undeliverable|Terminated)
+                echo "ERROR: Deploy command ended with status: $STATUS"
+                aws ssm get-command-invocation \
+                  --command-id "$CMD_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query "StandardErrorContent" \
+                  --output text | tail -80
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+
+          echo "ERROR: Deploy did not complete within 15 minutes."
+          exit 1
+
+      # ── 12. Print service URLs ───────────────────────────────────────────────
+      - name: Print service URLs
+        if: success()
+        run: |
+          echo ""
+          echo "=============================================="
+          echo " Rumis AI Lab deployed successfully!"
+          echo "=============================================="
+          echo " Instance : ${{ steps.ec2.outputs.id }}"
+          echo " Public IP: ${{ steps.eip.outputs.public_ip }}"
+          echo ""
+          echo " Open WebUI  → https://${{ secrets.OUI_DOMAIN }}"
+          echo " OpenClaw    → https://${{ secrets.OC_DOMAIN }}"
+          echo "=============================================="
+          echo ""
+          echo "Verify with:"
+          echo "  curl -sI https://${{ secrets.OUI_DOMAIN }} | head -1"
+          echo "  curl -sI https://${{ secrets.OC_DOMAIN }}  | head -1"
