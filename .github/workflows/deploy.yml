@@ -317,14 +317,18 @@ jobs:
           GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
           N8N_LICENSE_KEY=${N8N_LICENSE_KEY}"
 
-          # Substitute placeholders (use printf to avoid sed special chars in secrets)
+          # Export so Python subprocess can read them via os.environ
+          export ENV_BLOCK
+          export GH_PAT
+
+          # Substitute placeholders
           python3 - << PYEOF
           import os, pathlib
 
           script = pathlib.Path('/tmp/deploy.sh').read_text()
-          script = script.replace('__GH_PAT__',    os.environ['GH_PAT'])
-          script = script.replace('__REPO__',       os.environ['REPO'])
-          script = script.replace('__ENV_BLOCK__',  os.environ['ENV_BLOCK'])
+          script = script.replace('__GH_PAT__',   os.environ['GH_PAT'])
+          script = script.replace('__REPO__',      os.environ['REPO'])
+          script = script.replace('__ENV_BLOCK__', os.environ['ENV_BLOCK'])
           pathlib.Path('/tmp/deploy.sh').write_text(script)
           PYEOF
 
