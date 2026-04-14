@@ -123,9 +123,14 @@ for each row below.
 | `LITELLM_MASTER_KEY` | Master key for LiteLLM proxy, e.g. `sk-rumis-master-...` |
 | `OUI_DOMAIN` | Open WebUI subdomain, e.g. `oui.ruminahui.ch` |
 | `OC_DOMAIN` | OpenClaw subdomain, e.g. `oc.ruminahui.ch` |
+| `N8N_DOMAIN` | n8n subdomain, e.g. `n8n.ruminahui.ch` |
 | `CERTBOT_EMAIL` | Email for Let's Encrypt expiry notifications |
 | `OC_AUTH_USER` | Username for OpenClaw nginx basic auth |
 | `OC_AUTH_PASSWORD` | Password for OpenClaw nginx basic auth |
+| `WEBUI_ADMIN_EMAIL` | Email for the Open WebUI admin account (created on first boot) |
+| `WEBUI_ADMIN_PASSWORD` | Password for the Open WebUI admin account |
+| `GENERIC_TIMEZONE` | Timezone for n8n, e.g. `Europe/Zurich` |
+| `N8N_LICENSE_KEY` | n8n license activation key (optional, leave empty for community edition) |
 
 > **Note:** `GH_PAT` must **not** be named `GITHUB_TOKEN` — that name is
 > reserved by GitHub Actions and cannot be used as a custom secret.
@@ -134,15 +139,22 @@ for each row below.
 
 ## 3 — DNS
 
-Before triggering the workflow, ensure both subdomains resolve to your
+Before triggering the workflow, ensure all three subdomains resolve to your
 Elastic IP:
 
 ```
 oui.ruminahui.ch  →  <your Elastic IP>
 oc.ruminahui.ch   →  <your Elastic IP>
+n8n.ruminahui.ch  →  <your Elastic IP>
 ```
 
 Let's Encrypt will fail to issue certificates if DNS is not propagated.
+Check with:
+```bash
+dig +short oui.ruminahui.ch
+dig +short oc.ruminahui.ch
+dig +short n8n.ruminahui.ch
+```
 
 ---
 
@@ -171,14 +183,17 @@ Let's Encrypt will fail to issue certificates if DNS is not propagated.
 After the workflow completes, verify all services:
 
 ```bash
-# Open WebUI (HTTP/2 200)
+# Open WebUI (200)
 curl -sI https://oui.ruminahui.ch | head -1
 
-# OpenClaw (401 = nginx basic auth working)
+# OpenClaw (401 = nginx basic auth is working)
 curl -sI https://oc.ruminahui.ch  | head -1
+
+# n8n (200)
+curl -sI https://n8n.ruminahui.ch | head -1
 ```
 
-Or with credentials:
+With OpenClaw credentials:
 ```bash
 curl -sI -u admin:yourpassword https://oc.ruminahui.ch | head -1
 ```

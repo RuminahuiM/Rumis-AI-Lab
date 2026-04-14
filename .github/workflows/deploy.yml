@@ -237,17 +237,22 @@ jobs:
       - name: Deploy stack via SSM
         id: ssm
         env:
-          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY:     ${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY:     ${{ secrets.GEMINI_API_KEY }}
-          HF_TOKEN:           ${{ secrets.HF_TOKEN }}
-          LITELLM_MASTER_KEY: ${{ secrets.LITELLM_MASTER_KEY }}
-          OUI_DOMAIN:         ${{ secrets.OUI_DOMAIN }}
-          OC_DOMAIN:          ${{ secrets.OC_DOMAIN }}
-          CERTBOT_EMAIL:      ${{ secrets.CERTBOT_EMAIL }}
-          OC_AUTH_USER:       ${{ secrets.OC_AUTH_USER }}
-          OC_AUTH_PASSWORD:   ${{ secrets.OC_AUTH_PASSWORD }}
-          GH_PAT:             ${{ secrets.GH_PAT }}
+          ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY:      ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY:      ${{ secrets.GEMINI_API_KEY }}
+          HF_TOKEN:            ${{ secrets.HF_TOKEN }}
+          LITELLM_MASTER_KEY:  ${{ secrets.LITELLM_MASTER_KEY }}
+          OUI_DOMAIN:          ${{ secrets.OUI_DOMAIN }}
+          OC_DOMAIN:           ${{ secrets.OC_DOMAIN }}
+          N8N_DOMAIN:          ${{ secrets.N8N_DOMAIN }}
+          CERTBOT_EMAIL:       ${{ secrets.CERTBOT_EMAIL }}
+          OC_AUTH_USER:        ${{ secrets.OC_AUTH_USER }}
+          OC_AUTH_PASSWORD:    ${{ secrets.OC_AUTH_PASSWORD }}
+          WEBUI_ADMIN_EMAIL:   ${{ secrets.WEBUI_ADMIN_EMAIL }}
+          WEBUI_ADMIN_PASSWORD: ${{ secrets.WEBUI_ADMIN_PASSWORD }}
+          GENERIC_TIMEZONE:    ${{ secrets.GENERIC_TIMEZONE }}
+          N8N_LICENSE_KEY:     ${{ secrets.N8N_LICENSE_KEY }}
+          GH_PAT:              ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
 
@@ -303,9 +308,14 @@ jobs:
           LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
           OUI_DOMAIN=${OUI_DOMAIN}
           OC_DOMAIN=${OC_DOMAIN}
+          N8N_DOMAIN=${N8N_DOMAIN}
           CERTBOT_EMAIL=${CERTBOT_EMAIL}
           OC_AUTH_USER=${OC_AUTH_USER}
-          OC_AUTH_PASSWORD=${OC_AUTH_PASSWORD}"
+          OC_AUTH_PASSWORD=${OC_AUTH_PASSWORD}
+          WEBUI_ADMIN_EMAIL=${WEBUI_ADMIN_EMAIL}
+          WEBUI_ADMIN_PASSWORD=${WEBUI_ADMIN_PASSWORD}
+          GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+          N8N_LICENSE_KEY=${N8N_LICENSE_KEY}"
 
           # Substitute placeholders (use printf to avoid sed special chars in secrets)
           python3 - << PYEOF
