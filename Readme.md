@@ -12,7 +12,7 @@ A modular Docker Compose AI suite. Mix and match local models, cloud APIs, and d
 |---|---|---|---|---|
 | [**Local Full**](docs/setup-local.md) | Your machine / LAN | Yes (GPU rec.) | No (LAN only) | `bash scripts/up-local.sh` |
 | [**Custom Server**](docs/setup-custom-server.md) | Own / rented server | Yes (GPU rec.) | Yes (Let's Encrypt or BYO) | `docker compose -f docker-compose.server.yml up -d` |
-| [**Lite AWS**](docs/aws-ssl-setup.md) | AWS EC2 (t3.small) | No | Yes (Let's Encrypt) | `docker compose up -d` |
+| [**Lite AWS**](docs/aws-ssl-setup.md) | AWS EC2 (m7i-flex.large) | No | Yes (Let's Encrypt) | `docker compose up -d` |
 | [**Hybrid AWS**](docs/setup-hybrid.md) | AWS + separate GPU server | On GPU server | Yes (both sides) | `docker compose up -d` + hybrid config |
 
 **Not sure which to pick?**
@@ -39,22 +39,43 @@ Ports are `127.0.0.1`-bound in cloud/server setups (nginx handles public access)
 
 ---
 
-## Quick Start (Local Full)
+## Quick Start (Lite AWS — recommended)
+
+> Prerequisites: EC2 t3.small, ports 80/443 open, Elastic IP assigned, 3 DNS A records pointing at it.  
+> See [docs/aws-ssl-setup.md](docs/aws-ssl-setup.md) for the full step-by-step including DNS verification and timing.
+
+```bash
+# On the EC2 instance
+git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
+cd Rumis-AI-Lab
+cp .env.example .env && nano .env      # fill in API keys, domains, passwords
+
+# Verify DNS before this step: nslookup oui.yourdomain.com → must return your EC2 IP
+bash scripts/init-ssl.sh               # ~1–2 min: issues Let's Encrypt certs automatically
+
+docker compose up -d                   # ~5–10 min first run (image pulls)
+```
+
+Once all services show `healthy` (`docker compose ps`), open your browser:
+
+- `https://oui.yourdomain.com` — Open WebUI (create admin account on first visit)
+- `https://n8n.yourdomain.com` — n8n workflow automation
+- `https://oc.yourdomain.com` — OpenClaw (username/password set in `.env`)
+
+---
+
+## Quick Start (Local / LAN)
+
+For local development or LAN use without SSL:
 
 ```bash
 git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
 cd Rumis-AI-Lab
 cp .env.example .env && nano .env      # add at least one API key
-mkdir -p openclaw/config openclaw/workspace
 bash scripts/up-local.sh
 ```
 
 Open WebUI: `http://localhost:3000` — create your admin account on first visit.
-
-For OpenClaw one-time onboarding:
-```bash
-docker compose -f docker-compose.local.yml run --rm --profile cli openclaw-cli onboard
-```
 
 ---
 

@@ -138,7 +138,7 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\" || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -173,6 +173,12 @@ services:
         condition: service_healthy
       litellm:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     logging:
       driver: json-file
       options:
@@ -184,7 +190,7 @@ services:
 
   # ─── OpenClaw Gateway ───────────────────────────────────────────────────────
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:2026.3.8
+    image: ghcr.io/openclaw/openclaw:2026.4.2
     container_name: openclaw-gateway
     restart: unless-stopped
     ports:
@@ -195,7 +201,7 @@ services:
     environment:
       NODE_ENV: production
     command:
-      ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+      ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789", "--allow-unconfigured"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -206,6 +212,39 @@ services:
       driver: json-file
       options:
         max-size: "10m"
+        max-file: "5"
+    networks:
+      - frontend-net
+      - backend-net
+
+  # ─── n8n – workflow automation ─────────────────────────────────────────────
+  # Access: https://<N8N_DOMAIN>  (proxied by nginx after init-ssl.sh)
+  # First run: complete setup wizard to create the admin account.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      N8N_HOST: "${N8N_DOMAIN:-localhost}"
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: "https"
+      WEBHOOK_URL: "https://${N8N_DOMAIN:-localhost}/"
+      N8N_PROXY_HOPS: "1"
+      GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
         max-file: "5"
     networks:
       - frontend-net
@@ -225,8 +264,12 @@ services:
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
-      - open-webui
-      - openclaw-gateway
+      open-webui:
+        condition: service_healthy
+      openclaw-gateway:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
     logging:
       driver: json-file
       options:
@@ -252,7 +295,7 @@ services:
 
   # ─── OpenClaw CLI (on-demand) ───────────────────────────────────────────────
   openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:2026.3.8
+    image: ghcr.io/openclaw/openclaw:2026.4.2
     container_name: openclaw-cli
     volumes:
       - ./openclaw/config:/home/node/.openclaw
@@ -279,6 +322,7 @@ volumes:
   ollama_data:
   openwebui_data:
   llamacpp_models:
+  n8n_data:
 
 networks:
   frontend-net:

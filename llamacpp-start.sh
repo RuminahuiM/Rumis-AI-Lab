@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # ─── llama.cpp Model Downloader ─────────────────────────────────────────────
 # Downloads GGUF models from HuggingFace into /models/ volume.
@@ -50,12 +50,12 @@ for entry in "${MODELS[@]}"; do
   echo "⏳ Downloading $FILE from $REPO ..."
   DOWNLOAD_URL="https://huggingface.co/${REPO}/resolve/main/${FILE}"
 
-  HTTP_ARGS="-L -o ${DEST} --progress-bar"
-  if [ -n "$HF_TOKEN" ] && [ "$HF_TOKEN" != "" ]; then
-    HTTP_ARGS="$HTTP_ARGS -H \"Authorization: Bearer ${HF_TOKEN}\""
+  CURL_ARGS=(-L -o "${DEST}" --progress-bar)
+  if [ -n "${HF_TOKEN:-}" ]; then
+    CURL_ARGS+=(-H "Authorization: Bearer ${HF_TOKEN}")
   fi
 
-  eval curl $HTTP_ARGS "$DOWNLOAD_URL"
+  curl "${CURL_ARGS[@]}" "${DOWNLOAD_URL}"
 
   if [ -f "$DEST" ]; then
     echo ""

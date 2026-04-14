@@ -11,21 +11,26 @@
 │  │ :11434    │◄────────┐       │     Open WebUI          │      │
 │  └──────────┘         │       │     :3000               │      │
 │       ▲               │       │                        │      │
-│       │               │       └────────────────────────┘      │
-│       │               │                ▲                       │
-│       │           ┌───┴────────┐       │ OpenAI API            │
-│  ┌────┴─────┐     │  OpenClaw  │       │                       │
-│  │ llama.cpp │     │  :18789   │  ┌────┴──────────┐            │
-│  │ :8081     │     │  (agent)  │  │   LiteLLM     │            │
-│  └──────────┘     └───┬────────┘  │   :4000       │            │
-│       ▲               │           │               │            │
-│       │               └──────────►│  Claude, GPT, │            │
-│       └───────────────────────────│  Gemini       │            │
-│         OpenAI API                └───────┬───────┘            │
-│                                           │                     │
-│                                    api.anthropic.com            │
-│                                    api.openai.com               │
-│                                    generativelanguage.google    │
+│       │               │       └──────────┬─────────────┘      │
+│       │               │                  │ MCP (SSE)           │
+│       │           ┌───┴────────┐         │   ▼                 │
+│  ┌────┴─────┐     │  OpenClaw  │    ┌────┴──────────┐          │
+│  │ llama.cpp │     │  :18789   │    │   n8n         │          │
+│  │ :8081     │     │  (agent)  │    │   :5678       │          │
+│  └──────────┘     └───┬────────┘    │  (MCP server) │          │
+│       ▲               │  MCP tools  └───────────────┘          │
+│       │               └──────────►                              │
+│       │           ┌──────────────┐                              │
+│       │           │   LiteLLM    │                              │
+│       └──────────►│   :4000      │                              │
+│         OpenAI API│              │                              │
+│                   │  Claude, GPT,│                              │
+│                   │  Gemini      │                              │
+│                   └──────┬───────┘                              │
+│                          │                                      │
+│                   api.anthropic.com                             │
+│                   api.openai.com                                │
+│                   generativelanguage.google                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -68,6 +73,19 @@ OpenClaw connects to all model backends through the Docker network: Ollama for l
 The gateway is token-authenticated and bound to localhost only. An `openclaw-cli` service (in the `cli` profile) provides management commands but doesn't auto-start.
 
 Data is stored locally in `openclaw/config/` (agent memory, settings) and `openclaw/workspace/` (files the agent creates).
+
+### n8n (port 5678)
+
+A visual workflow automation platform that doubles as an **MCP (Model Context
+Protocol) server** for the stack. Using n8n's built-in MCP Server Trigger node,
+any workflow can be exposed as an AI-callable tool — giving Open WebUI and
+OpenClaw access to 400+ integrations (Gmail, Slack, GitHub, databases, HTTP
+APIs, and more) without holding any credentials themselves.
+
+All third-party secrets are stored in n8n's encrypted credential store. The AI
+receives only tool results, never the underlying credentials.
+
+See [docs/n8n-mcp-setup.md](n8n-mcp-setup.md) for setup instructions.
 
 ### Init Containers
 
