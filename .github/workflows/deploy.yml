@@ -143,7 +143,7 @@ jobs:
             echo "Creating security group $SG_NAME..."
             SG_ID=$(aws ec2 create-security-group \
               --group-name "$SG_NAME" \
-              --description "Rumis AI Lab – HTTP/HTTPS/SSH" \
+              --description "Rumis AI Lab - HTTP/HTTPS/SSH" \
               --vpc-id "$VPC_ID" \
               --query "GroupId" --output text)
             aws ec2 create-tags \
