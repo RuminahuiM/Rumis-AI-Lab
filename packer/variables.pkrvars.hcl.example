@@ -1,0 +1,19 @@
+vcenter_server   = "vcenter.example.com"
+vcenter_username = "administrator@vsphere.local"
+vcenter_password = "your-password-here"
+vcenter_insecure = false
+
+datacenter = "DC1"
+cluster    = "Cluster1"
+datastore  = "datastore1"
+network    = "VM Network"
+
+iso_path = "[datastore1] iso/ubuntu-24.04.2-live-server-amd64.iso"
+
+vm_name      = "rumis-ai-lab-template"
+vm_cpus      = 4
+vm_memory    = 8192
+vm_disk_size = 40960
+
+ssh_username = "rumis"
+ssh_password = "change-me-for-build"

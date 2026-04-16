@@ -1,171 +1,47 @@
 # =============================================================================
-# Lite AWS Setup – cloud API models only, HTTPS via nginx + Let's Encrypt
+# Rumis AI Lab – Frontend Stack
 # =============================================================================
-# This is the default compose file for the Lite AWS deployment.
-# For other setups, use:
-#   Local Full (LAN):       docker compose -f docker-compose.local.yml up -d
-#   Custom Hosted Server:   docker compose -f docker-compose.server.yml up -d
-#   Hybrid AWS + GPU:       use this file with litellm-config.hybrid.yaml
-#                           (see docs/setup-hybrid.md)
+# Runs on a vCenter-provisioned VM.  Persistent data lives on Synology NAS
+# via NFS so the VM can be re-provisioned without losing state.
 #
-# First-time AWS setup: bash scripts/init-ssl.sh   (generates SSL certs)
+# Backend (VLLM on DGX Spark) is deployed separately – see backend/.
+#
+# First-time setup: bash scripts/init-ssl.sh   (generates SSL certs)
 # =============================================================================
 
 services:
-  # ─── Ollama ────────────────────────────────────────────────────────────────
-  # Profile: local-models  →  only starts when you run:
-  #   docker compose --profile local-models up -d
-  # Requires a GPU-enabled host (nvidia-container-toolkit).
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
+  # ─── PostgreSQL – shared database for Open WebUI & n8n ────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
     restart: unless-stopped
-    profiles: [local-models]
-    ports:
-      - "127.0.0.1:11434:11434"  # localhost-only; no auth → never expose publicly
     volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    networks:
-      - backend-net
-
-  # ─── Ollama bootstrap – pulls a starter model once ────────────────────────
-  ollama-init:
-    image: curlimages/curl:latest
-    container_name: ollama-init
-    profiles: [local-models]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: >
-      sh -c '
-        echo "Pulling llama3.2:3b ..."
-        curl -sf http://ollama:11434/api/pull -d "{\"name\":\"llama3.2:3b\"}"
-        echo "Done."
-      '
-    restart: "no"
-    networks:
-      - backend-net
-
-  # ─── llama.cpp model downloader (runs once, then exits) ───────────────────
-  # Profile: local-models  →  requires GPU host + HF_TOKEN for gated models.
-  llamacpp-init:
-    image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
-    container_name: llamacpp-init
-    profiles: [local-models]
-    volumes:
-      - llamacpp_models:/models
-      - ./llamacpp-start.sh:/start.sh:ro
+      - postgres_data:/var/lib/postgresql/data
     environment:
-      HF_TOKEN: "${HF_TOKEN:-}"
-    entrypoint: ["bash", "/start.sh"]
-    restart: "no"
-    networks:
-      - backend-net
-
-  # ─── llama.cpp server (gpt-oss-20b) ──────────────────────────────────────
-  # Profile: local-models  →  uses official CUDA image, requires GPU host.
-  # To add another model: duplicate this service, change the name/port/model.
-  llamacpp:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    container_name: llamacpp
-    restart: unless-stopped
-    profiles: [local-models]
-    ports:
-      - "127.0.0.1:8081:8080"  # localhost-only; no auth → never expose publicly
-    volumes:
-      - llamacpp_models:/models:ro
-    environment:
-      LLAMA_ARG_MODEL: "/models/gpt-oss-20b-mxfp4.gguf"
-      LLAMA_ARG_HOST: "0.0.0.0"
-      LLAMA_ARG_PORT: "8080"
-      LLAMA_ARG_CTX_SIZE: "0"
-      LLAMA_ARG_N_GPU_LAYERS: "28"
-      LLAMA_ARG_THREADS: "4"
-      LLAMA_ARG_JINJA: "1"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    depends_on:
-      llamacpp-init:
-        condition: service_completed_successfully
+      POSTGRES_USER: "${POSTGRES_USER:-rumis}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+      POSTGRES_DB: openwebui
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rumis}"]
+      interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: 120s
+      start_period: 10s
     logging:
       driver: json-file
       options:
-        max-size: "20m"
+        max-size: "10m"
         max-file: "5"
     networks:
       - backend-net
 
-  # ─── TEMPLATE: add more llama.cpp models by duplicating the block above ──
-  # llamacpp-glm5:
-  #   image: ghcr.io/ggml-org/llama.cpp:server-cuda
-  #   container_name: llamacpp-glm5
-  #   restart: unless-stopped
-  #   ports:
-  #     - "127.0.0.1:8082:8080"
-  #   volumes:
-  #     - llamacpp_models:/models:ro
-  #   environment:
-  #     LLAMA_ARG_MODEL: "/models/your-glm5-model.gguf"
-  #     LLAMA_ARG_HOST: "0.0.0.0"
-  #     LLAMA_ARG_PORT: "8080"
-  #     LLAMA_ARG_CTX_SIZE: "0"
-  #     LLAMA_ARG_N_GPU_LAYERS: "28"
-  #     LLAMA_ARG_THREADS: "4"
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
-  #   depends_on:
-  #     llamacpp-init:
-  #       condition: service_completed_successfully
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #     start_period: 120s
-  #   networks:
-  #     - backend-net
-
-  # ─── LiteLLM Proxy – translates Anthropic API → OpenAI-compatible ────────
+  # ─── LiteLLM Proxy – unified gateway for cloud + local models ─────────────
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: litellm
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"  # localhost-only; no auth (internal network only)
+      - "127.0.0.1:4000:4000"
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: >
@@ -176,6 +52,7 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      VLLM_ENDPOINT: "${VLLM_ENDPOINT:?Set VLLM_ENDPOINT in .env (e.g. http://192.168.1.200:8000)}"
       LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:-sk-rumis-litellm-master}"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\" || exit 1"]
@@ -197,23 +74,19 @@ services:
     container_name: open-webui
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:8080"  # localhost-only; public access via nginx HTTPS
+      - "127.0.0.1:3000:8080"
     volumes:
       - openwebui_data:/app/backend/data
     environment:
-      # Cloud models go through LiteLLM (API keys in .env).
-      # To add local models later: start with --profile local-models and add
-      # endpoints here (e.g. "http://litellm:4000/v1;http://llamacpp:8080/v1").
-      OPENAI_API_BASE_URLS: "http://litellm:4000/v1"
+      OPENAI_API_BASE_URLS: "${OPENAI_API_BASE_URLS:-http://litellm:4000/v1}"
       OPENAI_API_KEYS: "sk-no-key-needed"
-      # Ollama disabled by default – only needed with --profile local-models.
-      ENABLE_OLLAMA_API: "false"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-rumis}:${POSTGRES_PASSWORD}@postgres:5432/openwebui"
       WEBUI_AUTH: "true"
-      # Pre-create admin account on first boot (set these in .env)
-      # Open WebUI auto-disables signup after first admin is created.
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL}"
       WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD}"
     depends_on:
+      postgres:
+        condition: service_healthy
       litellm:
         condition: service_healthy
     healthcheck:
@@ -231,51 +104,13 @@ services:
       - frontend-net
       - backend-net
 
-  # ─── OpenClaw Gateway ──────────────────────────────────────────────────────
-  # Personal AI agent. Requires one-time onboarding, see docs/openclaw-setup.md
-  # Web UI: http://localhost:18789 (token-authenticated)
-  openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:2026.4.2
-    container_name: openclaw-gateway
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:18789:18789"
-    volumes:
-      - ./openclaw/config:/home/node/.openclaw
-      - ./openclaw/workspace:/home/node/.openclaw/workspace
-    environment:
-      NODE_ENV: production
-    command:
-      [
-        "node", "dist/index.js", "gateway",
-        "--bind", "lan",
-        "--port", "18789",
-        "--allow-unconfigured",
-      ]
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - frontend-net
-      - backend-net
-
   # ─── n8n – workflow automation ────────────────────────────────────────────
-  # Access: https://<N8N_DOMAIN>  (proxied by nginx after init-ssl.sh)
-  # First run: complete setup wizard to create the admin account.
   n8n:
     image: docker.n8n.io/n8nio/n8n:latest
     container_name: n8n
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5678:5678"  # localhost-only; public access via nginx HTTPS
+      - "127.0.0.1:5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
     environment:
@@ -287,6 +122,15 @@ services:
       N8N_SECURE_COOKIE: "false"
       GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
       N8N_LICENSE_ACTIVATION_KEY: "${N8N_LICENSE_KEY:-}"
+      DB_TYPE: "postgresdb"
+      DB_POSTGRESDB_HOST: "postgres"
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: "n8n"
+      DB_POSTGRESDB_USER: "${POSTGRES_USER:-rumis}"
+      DB_POSTGRESDB_PASSWORD: "${POSTGRES_PASSWORD}"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
@@ -303,9 +147,6 @@ services:
       - backend-net
 
   # ─── Nginx – SSL termination & reverse proxy ─────────────────────────────
-  # Routes oui.<domain> → open-webui, oc.<domain> → openclaw-gateway,
-  # and n8n.<domain> → n8n.
-  # Config is generated by scripts/init-ssl.sh on first deployment.
   nginx:
     image: nginx:1.27-alpine
     container_name: nginx
@@ -315,13 +156,10 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/auth:/etc/nginx/auth:ro   # htpasswd files for basic auth
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
       open-webui:
-        condition: service_healthy
-      openclaw-gateway:
         condition: service_healthy
       n8n:
         condition: service_healthy
@@ -334,8 +172,6 @@ services:
       - frontend-net
 
   # ─── Certbot – auto-renews Let's Encrypt certificates every 12 h ─────────
-  # No internal network needed: only requires internet access (Let's Encrypt)
-  # and the shared certbot volumes.
   certbot:
     image: certbot/certbot:latest
     container_name: certbot
@@ -350,42 +186,30 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  # ─── OpenClaw CLI (management, runs on-demand only) ───────────────────────
-  openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:2026.4.2
-    container_name: openclaw-cli
-    volumes:
-      - ./openclaw/config:/home/node/.openclaw
-      - ./openclaw/workspace:/home/node/.openclaw/workspace
-    environment:
-      NODE_ENV: production
-      BROWSER: "echo"
-    stdin_open: true
-    tty: true
-    entrypoint: ["node", "dist/index.js"]
-    network_mode: "service:openclaw-gateway"
-    cap_drop:
-      - NET_RAW
-      - NET_ADMIN
-    security_opt:
-      - no-new-privileges:true
-    profiles:
-      - cli
-    depends_on:
-      openclaw-gateway:
-        condition: service_healthy
-
 volumes:
-  ollama_data:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${NAS_IP},vers=4.1,soft,timeo=150,retrans=3"
+      device: ":${NAS_SHARE_PATH}/postgres"
   openwebui_data:
-  llamacpp_models:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${NAS_IP},vers=4.1,soft,timeo=150,retrans=3"
+      device: ":${NAS_SHARE_PATH}/openwebui"
   n8n_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=${NAS_IP},vers=4.1,soft,timeo=150,retrans=3"
+      device: ":${NAS_SHARE_PATH}/n8n"
 
 networks:
-  # Public-facing tier: nginx ↔ open-webui ↔ openclaw-gateway
+  # Public-facing tier: nginx ↔ open-webui ↔ n8n
   frontend-net:
     driver: bridge
-  # Internal AI tier: webuis ↔ ollama / llamacpp / litellm
-  # nginx cannot reach backend services directly
+  # Internal tier: apps ↔ postgres / litellm
   backend-net:
     driver: bridge

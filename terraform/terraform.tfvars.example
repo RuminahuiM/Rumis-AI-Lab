@@ -1,0 +1,27 @@
+vcenter_server   = "vcenter.example.com"
+vcenter_username = "administrator@vsphere.local"
+vcenter_password = "your-password-here"
+vcenter_insecure = false
+
+datacenter    = "DC1"
+cluster       = "Cluster1"
+datastore     = "datastore1"
+network       = "VM Network"
+template_name = "rumis-ai-lab-template"
+
+vm_name      = "rumis-ai-lab"
+vm_cpus      = 4
+vm_memory    = 8192
+vm_disk_size = 40
+
+nas_ip         = "192.168.1.50"
+nas_share_path = "/volume1/rumis-ai-lab"
+
+vllm_endpoint = "http://192.168.1.200:8000"
+
+oui_domain    = "oui.mydomain.ch"
+n8n_domain    = "n8n.mydomain.ch"
+certbot_email = "you@example.com"
+
+postgres_user     = "rumis"
+postgres_password = "change-me-to-a-strong-password"

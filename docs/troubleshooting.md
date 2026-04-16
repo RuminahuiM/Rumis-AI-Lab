@@ -3,136 +3,148 @@
 ## Checking Service Status
 
 ```bash
-# See all services and their status
+# Frontend VM
 docker compose ps
 
+# Backend (DGX Spark)
+cd backend && docker compose ps
+
 # View logs for a specific service
-docker logs llamacpp
-docker logs open-webui
-docker logs litellm
-docker logs ollama
+docker compose logs open-webui
+docker compose logs litellm
+docker compose logs postgres
 
 # Follow logs in real-time
-docker logs -f llamacpp
+docker compose logs -f open-webui
 ```
 
 Healthy states: `Up (healthy)` or `Up`. Problem states: `Restarting`, `Up (unhealthy)`, or `Exited`.
 
 ---
 
-## Common Issues
+## Frontend VM Issues
 
 ### "Can't reach localhost:3000"
 
-**Open WebUI is still starting up.** On first launch it downloads embedding models from HuggingFace which takes a few minutes. Check progress with `docker logs -f open-webui`. Wait for the Open WebUI banner to appear in the logs.
+**Open WebUI is still starting up.** On first launch it downloads embedding models which takes a few minutes. Check progress with `docker compose logs -f open-webui`. Wait for the health check to pass.
 
-**Port conflict.** Another application might be using port 3000. Change the port mapping in `docker-compose.yml`:
-```yaml
-    ports:
-      - "3001:8080"  # Change 3000 to any free port
-```
+**Port conflict.** Another application might be using port 3000. Check with `ss -tlnp | grep 3000`.
 
 ### "Models not showing in Open WebUI"
 
-**For Ollama models:** Check `docker exec ollama ollama list` — if no models are listed, the download may still be in progress. Check `docker logs ollama-init`.
+**LiteLLM not healthy.** Check `docker compose ps litellm` and `docker compose logs litellm`. Verify API keys in `.env` are correct.
 
-**For llama.cpp models:** Go to Settings → Admin Settings → Connections and click the refresh button next to the OpenAI connections. If the connection shows an error, check `docker logs llamacpp` — the server might not have started yet.
-
-**For Claude models:** Check `docker logs litellm`. Make sure your `ANTHROPIC_API_KEY` in `.env` is correct. Verify LiteLLM is running: `curl http://localhost:4000/v1/models`.
-
-### "llamacpp keeps restarting"
-
-**Model file not found.** The `LLAMA_ARG_MODEL` path in `docker-compose.yml` must exactly match the filename downloaded by `llamacpp-start.sh`. Check what's in the volume:
+**VLLM backend unreachable.** Test connectivity from the frontend VM:
 ```bash
-docker run --rm -v openwebui-stack_llamacpp_models:/models alpine ls -lh /models/
+curl -sf http://<dgx-ip>:8000/v1/models
+```
+If this fails, check the backend (firewall, VLLM status).
+
+**Refresh connections.** In Open WebUI: Settings → Admin Settings → Connections → click the refresh button.
+
+### "LiteLLM unhealthy / API errors"
+
+Check logs:
+```bash
+docker compose logs litellm
 ```
 
-**Model download failed.** Check `docker logs llamacpp-init` to see if the download completed successfully.
+Common causes:
+- Invalid API key in `.env` — verify and restart: `docker compose restart litellm`
+- `VLLM_ENDPOINT` not set or unreachable — check `.env` and network connectivity
+- Config syntax error in `litellm-config.yaml`
+
+### "PostgreSQL connection refused"
+
+```bash
+docker compose logs postgres
+docker compose exec postgres pg_isready -U rumis
+```
+
+If PostgreSQL won't start, check NFS mount:
+```bash
+mount | grep nfs
+docker volume inspect rumis-ai-lab_postgres_data
+```
+
+### "NFS mount failed" or volumes won't create
+
+```bash
+# Test NFS manually
+sudo mount -t nfs4 -o vers=4.1 ${NAS_IP}:${NAS_SHARE_PATH}/postgres /mnt
+```
+
+Common causes:
+- NFS not enabled on Synology (Control Panel → File Services → NFS)
+- Wrong NAS_IP or NAS_SHARE_PATH in `.env`
+- Firewall blocking NFS (port 2049)
+- NFS permissions not set for this VM's IP (see [Storage Setup](storage-setup.md))
+
+### "Connection refused" between services
+
+Make sure all services are on the same Docker network. Check `docker compose ps` — if a service isn't running, others can't reach it.
+
+### "n8n can't connect to PostgreSQL"
+
+n8n uses a separate database (`n8n`) on the same PostgreSQL instance. If it wasn't created automatically, create it manually:
+```bash
+docker compose exec postgres createdb -U rumis n8n
+docker compose restart n8n
+```
+
+---
+
+## Backend (DGX Spark) Issues
+
+### "VLLM won't start / keeps restarting"
+
+```bash
+cd backend && docker compose logs vllm
+```
+
+Common causes:
+- **Missing HF_TOKEN** — required for gated models like Gemma. Set it in `backend/.env`
+- **NVIDIA runtime not configured** — verify with: `docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi`
+- **Model not found** — check the model ID in `VLLM_MODEL` is correct on HuggingFace
 
 ### "CUDA out of memory"
 
-Lower `LLAMA_ARG_N_GPU_LAYERS` in `docker-compose.yml` for the affected service. See [GPU Configuration](gpu-configuration.md) for recommended values.
+Lower GPU memory usage in `backend/.env`:
+```env
+VLLM_GPU_MEMORY_UTILIZATION=0.80
+VLLM_MAX_MODEL_LEN=4096
+```
 
-If running multiple llama.cpp services, stop the ones you're not using:
+Then restart: `docker compose down && docker compose up -d`
+
+### "Model download takes forever"
+
+First download can take 10-30 minutes depending on model size and network. The model is cached in the `huggingface_cache` volume — subsequent starts are fast.
+
+Check progress: `docker compose logs -f vllm`
+
+---
+
+## SSL / Nginx Issues
+
+### "init-ssl.sh fails with ACME challenge error"
+
+DNS must resolve to the server's IP before running `init-ssl.sh`:
 ```bash
-docker compose stop llamacpp-other
+nslookup oui.yourdomain.com    # must return this server's IP
+nslookup n8n.yourdomain.com    # must return this server's IP
 ```
 
-### "no usable GPU found" in llamacpp logs
+Also verify ports 80 and 443 are open (firewall, security group).
 
-**Using the wrong image.** Make sure the llamacpp service uses `ghcr.io/ggml-org/llama.cpp:server-cuda`, not the CPU image.
+### "Certificate renewal failed"
 
-**NVIDIA Container Toolkit not working.** Test with:
+Check certbot logs:
 ```bash
-docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
-```
-If this fails, your GPU passthrough isn't set up. On Windows, update Docker Desktop and your NVIDIA drivers. On Linux, install the NVIDIA Container Toolkit.
-
-**Missing deploy block.** The service needs the GPU reservation in `docker-compose.yml`:
-```yaml
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+docker compose logs certbot
 ```
 
-### "Ollama shows as unhealthy"
-
-This is usually a timing issue — the healthcheck runs before Ollama finishes initializing. The current setup uses `ollama list` for healthchecks which is reliable. If it persists, increase `start_period` in the healthcheck config.
-
-Check if Ollama is actually running:
-```bash
-docker exec ollama ollama list
-```
-
-### "LiteLLM unhealthy / Claude models not working"
-
-Check the API key:
-```bash
-docker logs litellm
-```
-
-Look for authentication errors. If you see them, verify your `ANTHROPIC_API_KEY` in `.env` is correct and has credits.
-
-### "Connection refused" errors between services
-
-Make sure all services are on the same network. Check `docker compose ps` — if a service isn't running, the others can't reach it. This is expected for temporarily stopped services.
-
-### "OpenClaw unauthorized" or "disconnected (1008)"
-
-Get a fresh dashboard URL with token:
-```bash
-docker compose run --rm openclaw-cli dashboard --no-open
-```
-
-If you see "pairing required", approve the device:
-```bash
-docker compose run --rm openclaw-cli devices list
-docker compose run --rm openclaw-cli devices approve <requestId>
-```
-
-### "OpenClaw can't reach models"
-
-Check that LiteLLM and Ollama are running:
-```bash
-docker compose ps litellm ollama
-```
-
-Test from inside the OpenClaw container:
-```bash
-docker exec openclaw-gateway curl -s http://litellm:4000/v1/models
-docker exec openclaw-gateway curl -s http://ollama:11434/api/tags
-```
-
-### "Permission denied" on openclaw/config
-
-The container runs as uid 1000. Fix ownership:
-```bash
-sudo chown -R 1000:1000 openclaw/
-```
+Certbot renews automatically every 12 hours. If renewal fails, verify the `.well-known/acme-challenge/` path is being served correctly by nginx.
 
 ---
 
@@ -142,43 +154,41 @@ sudo chown -R 1000:1000 openclaw/
 # Restart a single service
 docker compose restart open-webui
 
-# Stop a service without removing it (preserves state)
-docker compose stop llamacpp
-
-# Start a stopped service
-docker compose start llamacpp
-
 # Force recreate a service (picks up config changes)
-docker compose up -d --force-recreate llamacpp
+docker compose up -d --force-recreate litellm
 
-# Check what's using GPU memory
-nvidia-smi
+# Check what LiteLLM exposes
+curl -sf http://localhost:4000/v1/models | python3 -m json.tool
+
+# Check VLLM health (from frontend VM)
+curl -sf http://<dgx-ip>:8000/health
 
 # Shell into a container for debugging
-docker exec -it llamacpp bash
-docker exec -it open-webui bash
-docker exec -it openclaw-gateway bash
+docker compose exec open-webui bash
+docker compose exec postgres psql -U rumis openwebui
 
-# OpenClaw CLI commands (on-demand)
-docker compose run --rm openclaw-cli dashboard --no-open
-docker compose run --rm openclaw-cli devices list
-docker compose run --rm openclaw-cli config list
+# Check network connectivity
+docker compose exec open-webui curl -s http://litellm:4000/v1/models
+docker compose exec open-webui curl -s http://n8n:5678/healthz
 
-# Check network connectivity between services
-docker exec open-webui curl -s http://llamacpp:8080/v1/models
-docker exec open-webui curl -s http://litellm:4000/v1/models
-docker exec open-webui curl -s http://ollama:11434/api/tags
+# Check GPU usage (on DGX Spark)
+nvidia-smi
 ```
 
 ---
 
 ## Full Reset
 
-If nothing else works, start completely fresh:
+If nothing else works, start fresh. Data on the NAS is preserved — only the container state is reset:
 
 ```bash
-docker compose down -v      # Removes containers AND volumes (all data lost)
-docker compose up -d        # Recreate everything from scratch
+docker compose down
+docker compose up -d
 ```
 
-This deletes all chat history, user accounts, and downloaded models.
+To also reset NAS data (destructive — loses all chat history, workflows, and accounts):
+
+```bash
+docker compose down -v
+docker compose up -d
+```

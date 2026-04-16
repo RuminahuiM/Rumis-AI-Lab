@@ -1,12 +1,11 @@
 # n8n as MCP Server
 
 n8n ships a built-in **MCP Server Trigger** node (v1.68+). This lets you expose
-any n8n workflow as an MCP tool — so Open WebUI and OpenClaw can call real-world
-integrations (Gmail, Slack, GitHub, databases, HTTP APIs, and 400+ more) directly
-from chat or autonomous agent sessions.
+any n8n workflow as an MCP tool — so Open WebUI can call real-world integrations
+(Gmail, Slack, GitHub, databases, HTTP APIs, and 400+ more) directly from chat.
 
 No extra containers are needed. n8n is already in the stack and already on the
-right Docker networks to be reached by both Open WebUI and OpenClaw.
+right Docker networks to be reached by Open WebUI.
 
 ---
 
@@ -18,10 +17,10 @@ right Docker networks to be reached by both Open WebUI and OpenClaw.
 │  (chat + tools)│                             │  n8n  :5678              │
 └────────────────┘                             │  (MCP Server Trigger)    │
                                                │                          │
-┌────────────────┐    function calls via       │  Workflows can reach:    │
-│  OpenClaw      │    LiteLLM tool use    ───► │  Gmail, Slack, GitHub,   │
-│  (agent)       │                             │  HTTP, Postgres, ...     │
-└────────────────┘                             └──────────────────────────┘
+                                               │  Workflows can reach:    │
+                                               │  Gmail, Slack, GitHub,   │
+                                               │  HTTP, Postgres, ...     │
+                                               └──────────────────────────┘
 ```
 
 1. You create a workflow in n8n that starts with an **MCP Server Trigger** node.
@@ -66,18 +65,6 @@ store. The AI never sees them.
 
 > **Note:** The model must support tool/function calling. All Claude models,
 > GPT-4+, and Gemini 1.5+ support this. Select one of those in the chat.
-
----
-
-## Step 3: OpenClaw (no extra setup)
-
-OpenClaw is an autonomous agent that connects to models via the OpenAI-compatible
-API. When tool use is enabled on the model, the LLM receives your n8n MCP tools
-as OpenAI function definitions automatically — no separate MCP client
-configuration is needed in OpenClaw.
-
-To make sure tool use is active in OpenClaw, confirm in its settings that
-function calling is enabled for your chosen model.
 
 ---
 

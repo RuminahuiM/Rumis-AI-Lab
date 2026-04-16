@@ -1,0 +1,23 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  identity:
+    hostname: rumis-ai-lab
+    username: rumis
+    password: "$6$rounds=4096$randomsalt$placeholder"
+  ssh:
+    install-server: true
+    allow-pw: true
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+  packages:
+    - open-vm-tools
+    - cloud-init
+  late-commands:
+    - echo 'rumis ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/rumis
+    - chmod 440 /target/etc/sudoers.d/rumis

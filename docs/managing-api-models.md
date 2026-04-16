@@ -1,6 +1,6 @@
-# Managing API Models (Anthropic, OpenAI, Gemini)
+# Managing Models (Cloud APIs + VLLM)
 
-Cloud-hosted models from Anthropic, OpenAI, and Google Gemini are all managed through **LiteLLM**, which acts as a translation proxy. This guide covers how to add, remove, and configure these models.
+All models — cloud-hosted (Anthropic, OpenAI, Gemini) and local (VLLM on DGX Spark) — are managed through **LiteLLM**, which acts as a unified gateway. This guide covers how to add, remove, and configure models.
 
 ---
 
@@ -79,6 +79,9 @@ The three parts are:
 | Anthropic | `anthropic/` | `anthropic/claude-sonnet-4-20250514` |
 | OpenAI | `openai/` | `openai/gpt-4o` |
 | Google Gemini | `gemini/` | `gemini/gemini-2.5-pro-preview-06-05` |
+| VLLM (local) | `openai/` | `openai/google/gemma-4-27b-it` |
+
+VLLM uses the `openai/` prefix because it exposes an OpenAI-compatible API. The `api_base` points to the VLLM endpoint instead of OpenAI's servers.
 
 ### Example: Adding a new Anthropic model
 
@@ -205,6 +208,34 @@ LiteLLM supports dozens of providers. The pattern is always the same:
    ```
 
 Check [docs.litellm.ai/docs/providers](https://docs.litellm.ai/docs/providers) for the correct prefix and model IDs for each provider.
+
+---
+
+## VLLM Backend Models
+
+The VLLM backend on the DGX Spark is already configured in `litellm-config.yaml`:
+
+```yaml
+  - model_name: gemma-4-27b
+    litellm_params:
+      model: openai/google/gemma-4-27b-it
+      api_base: os.environ/VLLM_ENDPOINT
+      api_key: sk-no-key-needed
+```
+
+The `VLLM_ENDPOINT` environment variable (set in `.env`) tells LiteLLM where the DGX Spark is. When you switch models on the backend, update this entry to match the new model's `--served-model-name` (which defaults to the HuggingFace model ID).
+
+To add a second VLLM model entry (for when you switch the backend model):
+
+```yaml
+  - model_name: my-new-model
+    litellm_params:
+      model: openai/org/model-name
+      api_base: os.environ/VLLM_ENDPOINT
+      api_key: sk-no-key-needed
+```
+
+Only one VLLM model runs at a time on the DGX Spark. See [Backend Setup](backend-setup.md) for model switching.
 
 ---
 

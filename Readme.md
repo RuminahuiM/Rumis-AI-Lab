@@ -1,81 +1,96 @@
 # Rumis AI Lab
 
-A modular Docker Compose AI suite. Mix and match local models, cloud APIs, and deployment targets to fit your setup.
-
-**Core services:** Open WebUI (chat), OpenClaw (autonomous AI agent), LiteLLM (cloud API proxy), Ollama, llama.cpp.
+A two-tier AI platform: **frontend VM** (Open WebUI, n8n, LiteLLM) provisioned via vCenter IaC, and **backend** (VLLM) on an NVIDIA DGX Spark. Persistent data lives on a Synology NAS via NFS.
 
 ---
 
-## Choose Your Setup
+## Architecture
 
-| Setup | Where it runs | Local models | HTTPS | Start command |
-|---|---|---|---|---|
-| [**Local Full**](docs/setup-local.md) | Your machine / LAN | Yes (GPU rec.) | No (LAN only) | `bash scripts/up-local.sh` |
-| [**Custom Server**](docs/setup-custom-server.md) | Own / rented server | Yes (GPU rec.) | Yes (Let's Encrypt or BYO) | `docker compose -f docker-compose.server.yml up -d` |
-| [**Lite AWS**](docs/aws-ssl-setup.md) | AWS EC2 (m7i-flex.large) | No | Yes (Let's Encrypt) | `docker compose up -d` |
-| [**Hybrid AWS**](docs/setup-hybrid.md) | AWS + separate GPU server | On GPU server | Yes (both sides) | `docker compose up -d` + hybrid config |
-
-**Not sure which to pick?**
-- Testing quickly or personal LAN use → **Local Full**
-- Public-facing, own hardware → **Custom Server**
-- Just cloud APIs, minimal ops → **Lite AWS**
-- Cheap hosting + powerful local models → **Hybrid AWS**
-
----
-
-## What's Included
+```
+Frontend VM (vCenter)                  Backend (DGX Spark)
+┌──────────────────────────┐           ┌──────────────────┐
+│ nginx :80/:443           │           │                  │
+│  ├── oui.<domain>        │           │  VLLM :8000      │
+│  └── n8n.<domain>        │           │  (gemma-4-27b    │
+│                          │           │   NVFP4)         │
+│                          │   HTTP    │                  │
+│ Open WebUI :3000 ────────┼──────────>│                  │
+│ LiteLLM    :4000 ────────┼──────────>│                  │
+│ n8n        :5678         │           └──────────────────┘
+│ PostgreSQL :5432         │
+│                          │
+│ NFS volumes ─────────────┼──> Synology NAS
+└──────────────────────────┘    (/volume1/rumis-ai-lab)
+```
 
 | Service | Purpose | Default port |
 |---|---|---|
 | **Open WebUI** | Chat interface for all models | `3000` |
-| **OpenClaw** | Autonomous AI agent (tasks, files, APIs) | `18789` |
-| **LiteLLM** | Cloud API proxy (Claude, GPT, Gemini → OpenAI-compatible) | `4000` |
-| **Ollama** | Local model hosting (Llama, Mistral, Gemma, etc.) | `11434` |
-| **llama.cpp** | GGUF model server with CUDA GPU support | `8081` |
-| **nginx** | SSL termination + reverse proxy | `80` / `443` |
+| **LiteLLM** | Unified proxy — cloud APIs + VLLM backend | `4000` |
+| **n8n** | Workflow automation with MCP tool integration | `5678` |
+| **PostgreSQL** | Shared database for Open WebUI & n8n | `5432` |
+| **VLLM** | Local model inference on DGX Spark | `8000` |
+| **nginx** | SSL termination + reverse proxy | `80`/`443` |
 | **certbot** | Auto-renews Let's Encrypt certificates | — |
 
-Ports are `127.0.0.1`-bound in cloud/server setups (nginx handles public access). Ports are `0.0.0.0`-bound in the Local Full setup (LAN access).
+---
+
+## Quick Start
+
+### 1. Backend (DGX Spark)
+
+```bash
+ssh user@dgx-spark
+git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
+cd Rumis-AI-Lab/backend
+cp .env.example .env && nano .env      # set HF_TOKEN
+docker compose up -d
+docker compose logs -f vllm            # watch model download (~5 min)
+```
+
+VLLM serves Gemma 4 27B (NVFP4) on port 8000. See [Backend Setup](docs/backend-setup.md).
+
+### 2. Frontend VM (IaC)
+
+```bash
+# Build VM template (one-time)
+cd packer
+cp variables.pkrvars.hcl.example variables.pkrvars.hcl && nano variables.pkrvars.hcl
+packer build -var-file=variables.pkrvars.hcl .
+
+# Deploy VM
+cd ../terraform
+cp terraform.tfvars.example terraform.tfvars && nano terraform.tfvars
+terraform init && terraform apply
+```
+
+See [Frontend Setup](docs/frontend-setup.md) for the full guide including manual deployment.
+
+### 3. Frontend VM (Manual)
+
+```bash
+git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
+cd Rumis-AI-Lab
+cp .env.example .env && nano .env      # fill in all values
+bash scripts/init-ssl.sh               # bootstrap SSL certs
+docker compose up -d
+```
+
+Once healthy: `https://oui.yourdomain.com` (Open WebUI) and `https://n8n.yourdomain.com` (n8n).
 
 ---
 
-## Quick Start (Lite AWS — recommended)
+## Data Persistence
 
-> Prerequisites: EC2 t3.small, ports 80/443 open, Elastic IP assigned, 3 DNS A records pointing at it.  
-> See [docs/aws-ssl-setup.md](docs/aws-ssl-setup.md) for the full step-by-step including DNS verification and timing.
+All data is stored on the Synology NAS via NFS and survives VM re-provisioning:
 
-```bash
-# On the EC2 instance
-git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
-cd Rumis-AI-Lab
-cp .env.example .env && nano .env      # fill in API keys, domains, passwords
+| NFS Share | Contents |
+|---|---|
+| `postgres` | PostgreSQL databases (Open WebUI + n8n) |
+| `openwebui` | Uploaded documents, files |
+| `n8n` | Workflow files, encryption key |
 
-# Verify DNS before this step: nslookup oui.yourdomain.com → must return your EC2 IP
-bash scripts/init-ssl.sh               # ~1–2 min: issues Let's Encrypt certs automatically
-
-docker compose up -d                   # ~5–10 min first run (image pulls)
-```
-
-Once all services show `healthy` (`docker compose ps`), open your browser:
-
-- `https://oui.yourdomain.com` — Open WebUI (create admin account on first visit)
-- `https://n8n.yourdomain.com` — n8n workflow automation
-- `https://oc.yourdomain.com` — OpenClaw (username/password set in `.env`)
-
----
-
-## Quick Start (Local / LAN)
-
-For local development or LAN use without SSL:
-
-```bash
-git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
-cd Rumis-AI-Lab
-cp .env.example .env && nano .env      # add at least one API key
-bash scripts/up-local.sh
-```
-
-Open WebUI: `http://localhost:3000` — create your admin account on first visit.
+See [Storage Setup](docs/storage-setup.md) for NAS configuration.
 
 ---
 
@@ -83,79 +98,45 @@ Open WebUI: `http://localhost:3000` — create your admin account on first visit
 
 ```
 Rumis-AI-Lab/
+├── docker-compose.yml            # Frontend stack (VM)
+├── litellm-config.yaml           # Cloud + VLLM model routing
+├── .env.example                  # All environment variables
 │
-├── docker-compose.yml            # Lite AWS (default)
-├── docker-compose.local.yml      # Local Full (LAN, no SSL)
-├── docker-compose.server.yml     # Custom Server (full stack + SSL)
+├── backend/
+│   ├── docker-compose.yml        # VLLM on DGX Spark
+│   ├── models.yaml               # Tested model configurations
+│   ├── .env.example              # Backend environment variables
+│   ├── vllm.service              # Systemd auto-start unit
+│   └── scripts/setup-dgx.sh     # One-time DGX setup
 │
-├── litellm-config.yaml           # Cloud models only (Lite AWS / Hybrid AWS)
-├── litellm-config.local.yaml     # Cloud + local models (Local / Custom Server)
-├── litellm-config.hybrid.yaml    # Cloud + remote GPU models (Hybrid AWS)
+├── packer/
+│   ├── ubuntu-vsphere.pkr.hcl   # VM template builder
+│   ├── http/                     # Autoinstall config
+│   ├── scripts/setup.sh          # Provisioner
+│   └── variables.pkrvars.hcl.example
 │
-├── .env.example                  # All environment variables with comments
-├── llamacpp-start.sh             # GGUF model downloader script
+├── terraform/
+│   ├── main.tf                   # VM deployment
+│   ├── variables.tf              # All parameters
+│   ├── outputs.tf                # VM IP, URLs
+│   ├── templates/cloud-init.yaml # First-boot automation
+│   └── terraform.tfvars.example
 │
 ├── scripts/
-│   ├── init-ssl.sh               # Bootstrap Let's Encrypt certs (HTTPS setups)
-│   └── up-local.sh               # Shortcut: start Local Full setup
+│   └── init-ssl.sh               # Bootstrap Let's Encrypt certs
 │
 ├── nginx/conf.d/                 # Generated by init-ssl.sh
 ├── certbot/                      # SSL cert storage (gitignored)
 │
-├── openclaw/
-│   ├── config/                   # OpenClaw agent config & memory (gitignored)
-│   └── workspace/                # OpenClaw agent working directory (gitignored)
-│
 └── docs/
-    ├── setup-local.md            # Local Full setup guide
-    ├── aws-ssl-setup.md          # Lite AWS setup guide
-    ├── setup-custom-server.md    # Custom Server setup guide
-    ├── setup-hybrid.md           # Hybrid AWS + GPU server guide
-    ├── openclaw-setup.md         # OpenClaw agent setup and usage
-    ├── managing-models.md        # Add/remove Ollama and llama.cpp models
-    ├── managing-api-models.md    # Configure cloud providers
-    ├── gpu-configuration.md      # NVIDIA setup, VRAM tuning
-    ├── architecture.md           # How services connect
+    ├── architecture.md           # Service networking and data flow
+    ├── storage-setup.md          # Synology NAS NFS configuration
+    ├── frontend-setup.md         # VM deployment (IaC + manual)
+    ├── backend-setup.md          # DGX Spark VLLM setup
+    ├── managing-api-models.md    # Cloud + VLLM model configuration
+    ├── n8n-mcp-setup.md          # n8n as MCP tool server
     └── troubleshooting.md        # Common issues and fixes
 ```
-
----
-
-## Common Operations
-
-```bash
-# Check service status
-docker compose ps                                     # Lite AWS
-docker compose -f docker-compose.local.yml ps         # Local Full
-
-# Pull a new Ollama model
-docker exec ollama ollama pull mistral
-
-# View logs
-docker compose logs -f
-docker compose -f docker-compose.local.yml logs -f
-
-# Stop (data preserved)
-docker compose down
-docker compose -f docker-compose.local.yml down
-
-# Full reset (deletes all chat history, model data)
-docker compose down -v
-```
-
----
-
-## Data Persistence
-
-All data survives `docker compose down`:
-
-| Volume | Contents |
-|---|---|
-| `openwebui_data` | User accounts, chat history, settings |
-| `ollama_data` | Downloaded Ollama models |
-| `llamacpp_models` | Downloaded GGUF model files |
-
-`docker compose down -v` deletes volumes. Don't use `-v` unless you want a full reset.
 
 ---
 
@@ -163,13 +144,10 @@ All data survives `docker compose down`:
 
 | Guide | What it covers |
 |---|---|
-| [Local Full Setup](docs/setup-local.md) | LAN setup, GPU, phone/device access |
-| [Lite AWS Setup](docs/aws-ssl-setup.md) | EC2, DNS, SSL bootstrap, API-only |
-| [Custom Server Setup](docs/setup-custom-server.md) | Own hardware, Let's Encrypt or custom certs |
-| [Hybrid Setup](docs/setup-hybrid.md) | AWS + remote GPU server |
-| [OpenClaw Setup](docs/openclaw-setup.md) | Agent onboarding, security, usage |
-| [Managing Models](docs/managing-models.md) | Add/remove Ollama and llama.cpp models |
-| [Managing API Models](docs/managing-api-models.md) | Cloud providers, LiteLLM config |
-| [GPU Configuration](docs/gpu-configuration.md) | NVIDIA drivers, VRAM tuning, multi-GPU |
-| [Architecture](docs/architecture.md) | Service networking and data flow |
+| [Architecture](docs/architecture.md) | Two-tier design, networking, data flow |
+| [Storage Setup](docs/storage-setup.md) | Synology NAS NFS shares and permissions |
+| [Frontend Setup](docs/frontend-setup.md) | Packer + Terraform IaC or manual deploy |
+| [Backend Setup](docs/backend-setup.md) | DGX Spark VLLM, model switching |
+| [Managing API Models](docs/managing-api-models.md) | Cloud providers + VLLM via LiteLLM |
+| [n8n MCP Setup](docs/n8n-mcp-setup.md) | Expose n8n workflows as AI tools |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
