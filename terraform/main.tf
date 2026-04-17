@@ -45,14 +45,15 @@ data "vsphere_virtual_machine" "template" {
 
 locals {
   cloud_init_userdata = templatefile("${path.module}/templates/cloud-init.yaml", {
-    nas_ip         = var.nas_ip
-    nas_share_path = var.nas_share_path
-    oui_domain     = var.oui_domain
-    n8n_domain     = var.n8n_domain
-    certbot_email  = var.certbot_email
-    postgres_user  = var.postgres_user
-    postgres_pass  = var.postgres_password
-    vllm_endpoint  = var.vllm_endpoint
+    vllm_endpoint        = var.vllm_endpoint
+    azure_tenant_id      = var.azure_tenant_id
+    oauth_client_id      = var.oauth_client_id
+    oauth_client_secret  = var.oauth_client_secret
+    oauth_client_id_n8n  = var.oauth_client_id_n8n
+    oauth_client_secret_n8n = var.oauth_client_secret_n8n
+    webui_admin_email    = var.webui_admin_email
+    webui_admin_password = var.webui_admin_password
+    litellm_master_key   = var.litellm_master_key
   })
 }
 
@@ -73,9 +74,26 @@ resource "vsphere_virtual_machine" "frontend" {
     adapter_type = data.vsphere_virtual_machine.template.network_interface_types[0]
   }
 
+  # OS disk
   disk {
     label            = "disk0"
     size             = var.vm_disk_size
+    thin_provisioned = true
+  }
+
+  # OpenWebUI data disk
+  disk {
+    label            = "openwebui-data"
+    size             = var.openwebui_disk_size
+    unit_number      = 1
+    thin_provisioned = true
+  }
+
+  # n8n data disk
+  disk {
+    label            = "n8n-data"
+    size             = var.n8n_disk_size
+    unit_number      = 2
     thin_provisioned = true
   }
 

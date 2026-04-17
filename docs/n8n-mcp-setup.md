@@ -36,7 +36,7 @@ store. The AI never sees them.
 
 ## Step 1: Create an MCP tool workflow in n8n
 
-1. Open n8n at `http://<lan-ip>:5678` (local) or `https://n8n.<domain>` (server).
+1. Open n8n at `http://<vm-ip>:5678` (internal) or `https://n8n.yourdomain.com` (via Azure App Proxy).
 2. Complete the setup wizard on first run to create your admin account.
 3. Click **+ New workflow**.
 4. Click **Add first step** → search for **MCP Server Trigger** → select it.
@@ -114,14 +114,13 @@ Add your database credentials in n8n and the AI can run read queries safely
   database passwords) are stored encrypted in n8n's credential store. The AI
   receives only the tool result, never the credential.
 - **The MCP endpoint is internal-only.** `http://n8n:5678` is only reachable
-  inside the Docker network. It is not exposed to the internet directly. On the
-  server setup it is proxied through nginx with HTTPS.
+  inside the Docker network. External access goes through Azure Application
+  Proxy with Azure AD authentication.
 - **Scope your tools carefully.** Only activate workflows you trust the AI to
   call. Destructive operations (delete, send, publish) should have a human
   confirmation step or be gated by a parameter check in the workflow.
-- **n8n authentication.** On first run, set a strong password for your n8n
-  account. On the server setup, n8n is behind nginx HTTPS — do not expose port
-  5678 directly.
+- **n8n authentication.** Access is protected by Azure AD SSO via Application
+  Proxy. Do not expose port 5678 directly to the internet.
 
 ---
 

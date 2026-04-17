@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Packer provisioner – install Docker, NFS client, and open-vm-tools
+# Packer provisioner – install Docker and open-vm-tools
 # =============================================================================
 set -euo pipefail
 
@@ -9,9 +9,6 @@ export DEBIAN_FRONTEND=noninteractive
 echo "── Installing Docker ──"
 curl -fsSL https://get.docker.com | sh
 usermod -aG docker rumis
-
-echo "── Installing NFS client ──"
-apt-get install -y nfs-common
 
 echo "── Ensuring open-vm-tools is installed ──"
 apt-get install -y open-vm-tools

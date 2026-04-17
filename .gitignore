@@ -1,12 +1,5 @@
 .env
 
-# Let's Encrypt certificates (contain private keys – never commit)
-certbot/conf/
-certbot/www/
-
-# nginx generated config and auth files
-nginx/auth/
-
 # Terraform state and local config
 terraform/.terraform/
 terraform/*.tfstate

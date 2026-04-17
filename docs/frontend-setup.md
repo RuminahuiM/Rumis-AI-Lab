@@ -1,16 +1,15 @@
 # Frontend Setup
 
-The frontend VM runs Open WebUI, n8n, LiteLLM, PostgreSQL, nginx, and certbot. It can be deployed via IaC (Packer + Terraform) or manually.
+The frontend VM runs Open WebUI, n8n, and LiteLLM. Data is persisted on dedicated VMDKs. Access is via Azure Application Proxy.
 
 ---
 
 ## Prerequisites
 
 - VMware vCenter (for IaC) or any Ubuntu 24.04 server (for manual)
-- DNS: two A records pointing at the VM's IP (`oui.yourdomain.com`, `n8n.yourdomain.com`)
-- Synology NAS with NFS configured (see [Storage Setup](storage-setup.md))
 - VLLM backend running on DGX Spark (see [Backend Setup](backend-setup.md))
 - At least one cloud API key (Anthropic, OpenAI, or Gemini)
+- Azure AD setup for SSO (see [SSO Setup](sso-setup.md))
 
 ---
 
@@ -27,36 +26,35 @@ packer init .
 packer build -var-file=variables.pkrvars.hcl .
 ```
 
-This creates a VM template in vCenter with Docker, NFS client, and cloud-init pre-installed.
-
 ### Deploy the VM
 
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-nano terraform.tfvars         # fill in vCenter, NAS, domain, and password values
+nano terraform.tfvars         # fill in vCenter, Azure AD, and VLLM endpoint
 
 terraform init
-terraform plan                # review what will be created
-terraform apply               # deploy the VM
+terraform plan                # review: 1 VM + 2 data disks
+terraform apply
 ```
 
-Terraform outputs the VM IP and SSH command. Cloud-init will:
-1. Mount NFS shares from the Synology NAS
+Terraform creates a VM with two additional VMDKs. Cloud-init will:
+1. Format and mount `/mnt/openwebui` (VMDK #1) and `/mnt/n8n` (VMDK #2)
 2. Clone the repo to `/opt/rumis-ai-lab`
 3. Write `.env` from Terraform variables
-4. Run `init-ssl.sh` to bootstrap SSL
-5. Start all services with `docker compose up -d`
+4. Start all services with `docker compose up -d`
 
 ### After Deployment
 
-Wait ~5 minutes for cloud-init to complete, then verify:
+Wait ~3 minutes for cloud-init, then verify:
 
 ```bash
 ssh rumis@<vm-ip>
 cd /opt/rumis-ai-lab
-docker compose ps              # all services should be healthy
+docker compose ps              # 3 services should be healthy
 ```
+
+Then configure Azure Application Proxy (see [SSO Setup](sso-setup.md)).
 
 ---
 
@@ -65,12 +63,22 @@ docker compose ps              # all services should be healthy
 ### Install Dependencies
 
 ```bash
-# Docker
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
+```
 
-# NFS client
-sudo apt install -y nfs-common
+### Prepare Data Disks
+
+If you have two additional disks attached (e.g. `/dev/sdb` and `/dev/sdc`):
+
+```bash
+sudo mkfs.ext4 /dev/sdb
+sudo mkfs.ext4 /dev/sdc
+sudo mkdir -p /mnt/openwebui /mnt/n8n
+echo '/dev/sdb /mnt/openwebui ext4 defaults,noatime 0 2' | sudo tee -a /etc/fstab
+echo '/dev/sdc /mnt/n8n ext4 defaults,noatime 0 2' | sudo tee -a /etc/fstab
+sudo mount -a
+sudo chown -R 1000:1000 /mnt/openwebui /mnt/n8n
 ```
 
 ### Deploy
@@ -79,54 +87,30 @@ sudo apt install -y nfs-common
 git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
 cd Rumis-AI-Lab
 cp .env.example .env
-nano .env                      # fill in ALL values
+nano .env                      # fill in VLLM_ENDPOINT, Azure AD SSO vars, API keys
 
-# Verify DNS resolves to this server before proceeding
-nslookup oui.yourdomain.com
-
-bash scripts/init-ssl.sh       # ~2 min: issues SSL certs
-docker compose up -d           # ~5 min first run (image pulls)
+docker compose up -d
 ```
 
 ### Verify
 
 ```bash
-docker compose ps              # all services healthy
-curl -sf http://localhost:4000/v1/models | python3 -m json.tool   # LiteLLM models
+docker compose ps
+curl -sf http://localhost:4000/v1/models | python3 -m json.tool
 ```
 
-Open your browser:
-- `https://oui.yourdomain.com` — Open WebUI (create admin account on first visit)
-- `https://n8n.yourdomain.com` — n8n (create admin account on first visit)
-
----
-
-## n8n Database Setup
-
-n8n uses a separate database (`n8n`) on the same PostgreSQL instance. The database is created automatically by n8n on first start. If you need to create it manually:
-
-```bash
-docker exec postgres createdb -U rumis n8n
-```
+Internal access (before Azure App Proxy):
+- `http://<vm-ip>:3000` — Open WebUI
+- `http://<vm-ip>:5678` — n8n
 
 ---
 
 ## Common Operations
 
 ```bash
-# Check service status
 docker compose ps
-
-# View logs
-docker compose logs -f
 docker compose logs -f open-webui
-
-# Restart a single service
 docker compose restart litellm
-
-# Update images
-docker compose pull && docker compose up -d
-
-# Stop (data preserved on NAS)
-docker compose down
+docker compose pull && docker compose up -d    # update images
+docker compose down                             # stop (data preserved on VMDKs)
 ```

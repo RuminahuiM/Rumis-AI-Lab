@@ -8,12 +8,12 @@ output "ssh_command" {
   value       = "ssh rumis@${vsphere_virtual_machine.frontend.default_ip_address}"
 }
 
-output "open_webui_url" {
-  description = "Open WebUI URL (after SSL setup)"
-  value       = "https://${var.oui_domain}"
+output "open_webui_internal_url" {
+  description = "Open WebUI URL (internal, before Azure App Proxy)"
+  value       = "http://${vsphere_virtual_machine.frontend.default_ip_address}:3000"
 }
 
-output "n8n_url" {
-  description = "n8n URL (after SSL setup)"
-  value       = "https://${var.n8n_domain}"
+output "n8n_internal_url" {
+  description = "n8n URL (internal, before Azure App Proxy)"
+  value       = "http://${vsphere_virtual_machine.frontend.default_ip_address}:5678"
 }

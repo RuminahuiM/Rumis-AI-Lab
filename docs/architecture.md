@@ -1,48 +1,48 @@
 # Architecture
 
-Rumis AI Lab uses a two-tier architecture: a **frontend VM** for user-facing services and a **backend DGX Spark** for local model inference. All persistent data is stored on a Synology NAS via NFS.
+Rumis AI Lab uses a two-tier architecture: a **frontend VM** for user-facing services (accessed via Azure Application Proxy) and a **backend DGX Spark** for local model inference.
 
 ---
 
 ## Network Topology
 
 ```
-Internet
-    │
-    ▼
-┌───────────────────────────────────────────────┐
-│  Frontend VM (vCenter)                        │
-│                                               │
-│  ┌─────────┐   ┌────────────┐   ┌─────────┐  │
-│  │ nginx   │──►│ Open WebUI │──►│ LiteLLM │  │    ┌────────────────┐
-│  │ :80/443 │   │ :3000      │   │ :4000   │──┼───►│ DGX Spark      │
-│  │         │──►│            │   │         │  │    │                │
-│  │         │   └──────┬─────┘   └─────────┘  │    │ VLLM :8000     │
-│  │         │──►┌──────┴─────┐                │    │ (gemma-4-27b)  │
-│  │         │   │ n8n :5678  │                │    └────────────────┘
-│  └─────────┘   └──────┬─────┘                │
-│                       │                      │
-│                ┌──────┴──────┐               │
-│                │ PostgreSQL  │               │    ┌────────────────┐
-│                │ :5432       │               │    │ Synology NAS   │
-│                └─────────────┘               │    │                │
-│                       │                      │    │ NFS exports:   │
-│                       └──────────────────────┼───►│ /postgres      │
-│                                              │    │ /openwebui     │
-│                                              │    │ /n8n           │
-└──────────────────────────────────────────────┘    └────────────────┘
+Internet → Azure AD → Azure Application Proxy
+                          │
+                          ▼ (via App Proxy Connector on VM)
+                  ┌─────────────────────────────┐
+                  │  Linux VM (vSphere)          │
+                  │                              │
+                  │  Open WebUI :3000             │
+                  │    └── OIDC → Azure AD       │        ┌──────────────┐
+                  │    └── data → /mnt/openwebui │        │ DGX Spark    │
+                  │                              │        │              │
+                  │  n8n :5678                    │        │ VLLM :8000   │
+                  │    └── OIDC → Azure AD       │        │ (gemma-4-27b │
+                  │    └── data → /mnt/n8n       │        │  NVFP4)      │
+                  │                              │  HTTP  │              │
+                  │  LiteLLM :4000 ──────────────┼───────>│              │
+                  │    (stateless, config only)   │        └──────────────┘
+                  │                              │
+                  │  /mnt/openwebui ← VMDK #1    │
+                  │  /mnt/n8n       ← VMDK #2    │
+                  └─────────────────────────────┘
 ```
 
 ---
 
-## Docker Networks (Frontend VM)
+## Access Layer
 
-| Network | Services | Purpose |
-|---|---|---|
-| `frontend-net` | nginx, open-webui, n8n | Public-facing tier |
-| `backend-net` | open-webui, n8n, litellm, postgres | Internal services |
+Azure Application Proxy handles:
+- **TLS termination** — no nginx or certbot needed on the VM
+- **Pre-authentication** — users authenticate via Azure AD before reaching the app
+- **Reverse proxy** — routes external URLs to internal VM ports
 
-nginx cannot reach PostgreSQL or LiteLLM directly. Open WebUI and n8n bridge both networks.
+Two Enterprise Applications in Azure AD:
+- `oui.contoso.com` → `http://<vm-ip>:3000` (Open WebUI)
+- `n8n.contoso.com` → `http://<vm-ip>:5678` (n8n)
+
+Both use the same Connector Group with a connector installed on the VM.
 
 ---
 
@@ -50,74 +50,55 @@ nginx cannot reach PostgreSQL or LiteLLM directly. Open WebUI and n8n bridge bot
 
 ### Open WebUI (port 3000)
 
-The user-facing web interface. Connects to LiteLLM for all model access and presents them in a unified model picker. Stores user accounts, chat history, and settings in PostgreSQL. Uploaded files and documents are stored in the `openwebui_data` NFS volume.
+Chat interface for all models. Uses SQLite for its database (stored on `/mnt/openwebui` VMDK). SSO via native OIDC integration with Azure AD.
 
 ### LiteLLM (port 4000)
 
-Unified gateway that routes requests to both cloud APIs (Anthropic, OpenAI, Gemini) and the local VLLM backend on the DGX Spark. All model access goes through LiteLLM — neither Open WebUI nor n8n hold cloud API keys directly.
-
-Configuration is in `litellm-config.yaml`. API keys and the VLLM endpoint are passed via `.env`.
-
-### PostgreSQL (port 5432)
-
-Shared database for Open WebUI and n8n. Data is stored on the Synology NAS via NFS, making it survive VM re-provisioning. PostgreSQL handles NFS gracefully with proper fsync and WAL journaling.
+Stateless proxy that routes requests to cloud APIs (Anthropic, OpenAI, Gemini) and the VLLM backend. Config in `litellm-config.yaml`, API keys via `.env`. No persistent storage needed.
 
 ### n8n (port 5678)
 
-Visual workflow automation platform that doubles as an **MCP (Model Context Protocol) server**. Using n8n's built-in MCP Server Trigger node, any workflow can be exposed as an AI-callable tool — giving Open WebUI access to 400+ integrations (Gmail, Slack, GitHub, databases, HTTP APIs) without holding any credentials.
-
-All third-party secrets are stored in n8n's encrypted credential store. The AI receives only tool results, never the underlying credentials.
-
-See [n8n MCP Setup](n8n-mcp-setup.md) for instructions.
+Workflow automation with MCP Server Trigger for AI tool integration. Uses SQLite (stored on `/mnt/n8n` VMDK). SSO via n8n-oidc community module with Azure AD.
 
 ### VLLM (port 8000, DGX Spark)
 
-Serves a single model at a time with maximum GPU utilization. Default: Gemma 4 27B-IT with NVIDIA FP4 quantization. The OpenAI-compatible API is accessible from the frontend VM via the `VLLM_ENDPOINT` configuration.
-
-Model files are cached in a Docker volume on the DGX Spark so subsequent restarts are fast.
+Serves one model at a time with maximum GPU utilization. Default: Gemma 4 27B-IT with NVIDIA FP4 quantization. Runs independently on the DGX Spark.
 
 ---
 
 ## Data Flow
 
 ### Chat request (cloud model)
-1. User → nginx (HTTPS) → Open WebUI
+1. User → Azure App Proxy → Open WebUI
 2. Open WebUI → LiteLLM → Anthropic/OpenAI/Gemini API
-3. Response streams back the same path
 
 ### Chat request (local VLLM model)
-1. User → nginx (HTTPS) → Open WebUI
+1. User → Azure App Proxy → Open WebUI
 2. Open WebUI → LiteLLM → VLLM on DGX Spark (:8000)
-3. Response streams back the same path
 
 ### n8n MCP tool call
 1. LLM decides to call a tool during chat
 2. Open WebUI → n8n MCP endpoint (`http://n8n:5678/mcp`)
-3. n8n executes the workflow (API call, DB query, etc.)
-4. Result returned to the conversation
+3. n8n executes the workflow → result returned to conversation
 
 ---
 
 ## Storage
 
-All Docker volumes use NFS mounts to the Synology NAS:
+Each service gets a dedicated VMDK attached to the VM, formatted as ext4:
 
-| Volume | NFS Path | Contents |
+| Mount Point | Disk | Contents |
 |---|---|---|
-| `postgres_data` | `/volume1/rumis-ai-lab/postgres` | PostgreSQL databases |
-| `openwebui_data` | `/volume1/rumis-ai-lab/openwebui` | Uploaded files, documents |
-| `n8n_data` | `/volume1/rumis-ai-lab/n8n` | Workflow data, encryption key |
+| `/mnt/openwebui` | VMDK #1 (sdb) | SQLite DB, uploaded files, documents |
+| `/mnt/n8n` | VMDK #2 (sdc) | SQLite DB, workflow data, encryption key |
 
-The frontend VM can be destroyed and re-provisioned without data loss.
+VMDKs live on the vSphere datastore (NetApp-backed). Backed up via vSphere snapshots. The VM itself can be destroyed and re-created — just re-attach the data disks.
 
 ---
 
 ## Provisioning
 
-The frontend VM is managed as code:
-
-1. **Packer** builds a VM template with Docker, NFS client, and cloud-init pre-installed
-2. **Terraform** clones the template, injects cloud-init config via guestinfo, and starts the VM
-3. **Cloud-init** on first boot: mounts NFS, clones the repo, writes `.env`, runs `init-ssl.sh`, starts services
-
-The backend (DGX Spark) runs independently with its own `docker-compose.yml`.
+1. **Packer** builds a VM template with Docker and open-vm-tools
+2. **Terraform** clones the template, attaches two data VMDKs, injects cloud-init
+3. **Cloud-init** on first boot: formats/mounts disks, clones repo, writes `.env`, starts services
+4. **Azure App Proxy** configured separately in Azure AD portal (see [SSO Setup](sso-setup.md))

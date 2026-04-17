@@ -66,48 +66,74 @@ variable "vm_memory" {
 variable "vm_disk_size" {
   type        = number
   default     = 40
-  description = "Disk size in GB"
+  description = "OS disk size in GB"
 }
 
-# ── Application Config ───────────────────────────────────────────────────────
-
-variable "nas_ip" {
-  type        = string
-  description = "Synology NAS IP for NFS mounts"
+variable "openwebui_disk_size" {
+  type        = number
+  default     = 20
+  description = "OpenWebUI data disk size in GB"
 }
 
-variable "nas_share_path" {
-  type        = string
-  default     = "/volume1/rumis-ai-lab"
-  description = "NFS export path on Synology"
+variable "n8n_disk_size" {
+  type        = number
+  default     = 10
+  description = "n8n data disk size in GB"
 }
+
+# ── VLLM Backend ─────────────────────────────────────────────────────────────
 
 variable "vllm_endpoint" {
   type        = string
   description = "VLLM backend URL (e.g. http://192.168.1.200:8000)"
 }
 
-variable "oui_domain" {
+# ── Azure AD SSO ─────────────────────────────────────────────────────────────
+
+variable "azure_tenant_id" {
   type        = string
-  description = "Domain for Open WebUI (e.g. oui.mydomain.ch)"
+  description = "Azure AD tenant ID"
 }
 
-variable "n8n_domain" {
+variable "oauth_client_id" {
   type        = string
-  description = "Domain for n8n (e.g. n8n.mydomain.ch)"
+  description = "Azure AD App Registration client ID for OpenWebUI"
 }
 
-variable "certbot_email" {
+variable "oauth_client_secret" {
   type        = string
-  description = "Email for Let's Encrypt notifications"
+  sensitive   = true
+  description = "Azure AD App Registration client secret for OpenWebUI"
 }
 
-variable "postgres_user" {
-  type    = string
-  default = "rumis"
+variable "oauth_client_id_n8n" {
+  type        = string
+  description = "Azure AD App Registration client ID for n8n"
 }
 
-variable "postgres_password" {
-  type      = string
-  sensitive = true
+variable "oauth_client_secret_n8n" {
+  type        = string
+  sensitive   = true
+  description = "Azure AD App Registration client secret for n8n"
+}
+
+# ── Application Config ───────────────────────────────────────────────────────
+
+variable "webui_admin_email" {
+  type        = string
+  default     = "admin@example.com"
+  description = "Open WebUI admin email (created on first boot)"
+}
+
+variable "webui_admin_password" {
+  type        = string
+  sensitive   = true
+  description = "Open WebUI admin password"
+}
+
+variable "litellm_master_key" {
+  type        = string
+  sensitive   = true
+  default     = "sk-rumis-litellm-master"
+  description = "LiteLLM proxy master key"
 }

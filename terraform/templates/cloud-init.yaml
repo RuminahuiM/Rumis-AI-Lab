@@ -1,38 +1,50 @@
 #cloud-config
 package_update: true
-packages:
-  - nfs-common
+
+disk_setup:
+  /dev/sdb:
+    table_type: gpt
+    overwrite: false
+  /dev/sdc:
+    table_type: gpt
+    overwrite: false
+
+fs_setup:
+  - filesystem: ext4
+    device: /dev/sdb
+    partition: auto
+  - filesystem: ext4
+    device: /dev/sdc
+    partition: auto
+
+mounts:
+  - [/dev/sdb1, /mnt/openwebui, ext4, "defaults,noatime", "0", "2"]
+  - [/dev/sdc1, /mnt/n8n, ext4, "defaults,noatime", "0", "2"]
 
 runcmd:
-  # Create NFS mount points
-  - mkdir -p /mnt/nas/postgres /mnt/nas/openwebui /mnt/nas/n8n
-
-  # Add NFS mounts to fstab
-  - |
-    echo "${nas_ip}:${nas_share_path}/postgres  /mnt/nas/postgres  nfs4 vers=4.1,soft,timeo=150,retrans=3 0 0" >> /etc/fstab
-    echo "${nas_ip}:${nas_share_path}/openwebui /mnt/nas/openwebui nfs4 vers=4.1,soft,timeo=150,retrans=3 0 0" >> /etc/fstab
-    echo "${nas_ip}:${nas_share_path}/n8n       /mnt/nas/n8n       nfs4 vers=4.1,soft,timeo=150,retrans=3 0 0" >> /etc/fstab
-  - mount -a
-
   # Clone the repo
   - git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git /opt/rumis-ai-lab
   - chown -R rumis:rumis /opt/rumis-ai-lab
 
+  # Ensure mount point ownership
+  - chown -R 1000:1000 /mnt/openwebui
+  - chown -R 1000:1000 /mnt/n8n
+
   # Write .env
   - |
     cat > /opt/rumis-ai-lab/.env <<'ENVEOF'
-    POSTGRES_USER=${postgres_user}
-    POSTGRES_PASSWORD=${postgres_pass}
     VLLM_ENDPOINT=${vllm_endpoint}
-    NAS_IP=${nas_ip}
-    NAS_SHARE_PATH=${nas_share_path}
-    OUI_DOMAIN=${oui_domain}
-    N8N_DOMAIN=${n8n_domain}
-    CERTBOT_EMAIL=${certbot_email}
+    AZURE_TENANT_ID=${azure_tenant_id}
+    OAUTH_CLIENT_ID=${oauth_client_id}
+    OAUTH_CLIENT_SECRET=${oauth_client_secret}
+    OAUTH_CLIENT_ID_N8N=${oauth_client_id_n8n}
+    OAUTH_CLIENT_SECRET_N8N=${oauth_client_secret_n8n}
+    WEBUI_ADMIN_EMAIL=${webui_admin_email}
+    WEBUI_ADMIN_PASSWORD=${webui_admin_password}
+    LITELLM_MASTER_KEY=${litellm_master_key}
     ENVEOF
   - chown rumis:rumis /opt/rumis-ai-lab/.env
   - chmod 600 /opt/rumis-ai-lab/.env
 
-  # Bootstrap SSL and start services
-  - cd /opt/rumis-ai-lab && bash scripts/init-ssl.sh
+  # Start services
   - cd /opt/rumis-ai-lab && docker compose up -d

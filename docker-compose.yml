@@ -1,40 +1,13 @@
 # =============================================================================
 # Rumis AI Lab – Frontend Stack
 # =============================================================================
-# Runs on a vCenter-provisioned VM.  Persistent data lives on Synology NAS
-# via NFS so the VM can be re-provisioned without losing state.
+# Runs on a vCenter-provisioned VM with dedicated VMDKs for persistent data.
+# Access is via Azure Application Proxy (TLS + SSO handled by Azure AD).
 #
 # Backend (VLLM on DGX Spark) is deployed separately – see backend/.
-#
-# First-time setup: bash scripts/init-ssl.sh   (generates SSL certs)
 # =============================================================================
 
 services:
-  # ─── PostgreSQL – shared database for Open WebUI & n8n ────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: postgres
-    restart: unless-stopped
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_USER: "${POSTGRES_USER:-rumis}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
-      POSTGRES_DB: openwebui
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rumis}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - backend-net
-
   # ─── LiteLLM Proxy – unified gateway for cloud + local models ─────────────
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -65,8 +38,6 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-    networks:
-      - backend-net
 
   # ─── Open WebUI ───────────────────────────────────────────────────────────
   open-webui:
@@ -74,21 +45,22 @@ services:
     container_name: open-webui
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:8080"
+      - "0.0.0.0:3000:8080"
     volumes:
-      - openwebui_data:/app/backend/data
+      - /mnt/openwebui:/app/backend/data
     environment:
       OPENAI_API_BASE_URLS: "${OPENAI_API_BASE_URLS:-http://litellm:4000/v1}"
       OPENAI_API_KEYS: "sk-no-key-needed"
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-rumis}:${POSTGRES_PASSWORD}@postgres:5432/openwebui"
       WEBUI_AUTH: "true"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL}"
       WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD}"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      litellm:
-        condition: service_healthy
+      # Azure AD OIDC SSO
+      ENABLE_OAUTH_SIGNUP: "true"
+      OAUTH_PROVIDER_NAME: "Azure AD"
+      OAUTH_CLIENT_ID: "${OAUTH_CLIENT_ID:-}"
+      OAUTH_CLIENT_SECRET: "${OAUTH_CLIENT_SECRET:-}"
+      OPENID_PROVIDER_URL: "https://login.microsoftonline.com/${AZURE_TENANT_ID:-common}/v2.0/.well-known/openid-configuration"
+      OAUTH_SCOPES: "openid email profile"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
@@ -100,37 +72,31 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-    networks:
-      - frontend-net
-      - backend-net
 
   # ─── n8n – workflow automation ────────────────────────────────────────────
+  # SSO via n8n-oidc community module (official SSO requires paid Enterprise).
+  # See docs/sso-setup.md for Azure AD configuration.
   n8n:
     image: docker.n8n.io/n8nio/n8n:latest
     container_name: n8n
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5678:5678"
+      - "0.0.0.0:5678:5678"
     volumes:
-      - n8n_data:/home/node/.n8n
+      - /mnt/n8n:/home/node/.n8n
     environment:
-      N8N_HOST: "${N8N_DOMAIN:-localhost}"
+      N8N_HOST: "0.0.0.0"
       N8N_PORT: "5678"
       N8N_PROTOCOL: "https"
-      WEBHOOK_URL: "https://${N8N_DOMAIN:-localhost}/"
       N8N_PROXY_HOPS: "1"
       N8N_SECURE_COOKIE: "false"
       GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Zurich}"
       N8N_LICENSE_ACTIVATION_KEY: "${N8N_LICENSE_KEY:-}"
-      DB_TYPE: "postgresdb"
-      DB_POSTGRESDB_HOST: "postgres"
-      DB_POSTGRESDB_PORT: "5432"
-      DB_POSTGRESDB_DATABASE: "n8n"
-      DB_POSTGRESDB_USER: "${POSTGRES_USER:-rumis}"
-      DB_POSTGRESDB_PASSWORD: "${POSTGRES_PASSWORD}"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      # n8n-oidc (community OIDC module)
+      EXTERNAL_MODULES: "n8n-oidc"
+      N8N_OIDC_CLIENT_ID: "${OAUTH_CLIENT_ID_N8N:-}"
+      N8N_OIDC_CLIENT_SECRET: "${OAUTH_CLIENT_SECRET_N8N:-}"
+      N8N_OIDC_ISSUER: "https://login.microsoftonline.com/${AZURE_TENANT_ID:-common}/v2.0"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
@@ -142,74 +108,3 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
-    networks:
-      - frontend-net
-      - backend-net
-
-  # ─── Nginx – SSL termination & reverse proxy ─────────────────────────────
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./certbot/www:/var/www/certbot:ro
-      - ./certbot/conf:/etc/letsencrypt:ro
-    depends_on:
-      open-webui:
-        condition: service_healthy
-      n8n:
-        condition: service_healthy
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - frontend-net
-
-  # ─── Certbot – auto-renews Let's Encrypt certificates every 12 h ─────────
-  certbot:
-    image: certbot/certbot:latest
-    container_name: certbot
-    restart: unless-stopped
-    volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "3"
-
-volumes:
-  postgres_data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=${NAS_IP},vers=4.1,soft,timeo=150,retrans=3"
-      device: ":${NAS_SHARE_PATH}/postgres"
-  openwebui_data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=${NAS_IP},vers=4.1,soft,timeo=150,retrans=3"
-      device: ":${NAS_SHARE_PATH}/openwebui"
-  n8n_data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=${NAS_IP},vers=4.1,soft,timeo=150,retrans=3"
-      device: ":${NAS_SHARE_PATH}/n8n"
-
-networks:
-  # Public-facing tier: nginx ↔ open-webui ↔ n8n
-  frontend-net:
-    driver: bridge
-  # Internal tier: apps ↔ postgres / litellm
-  backend-net:
-    driver: bridge

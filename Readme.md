@@ -1,37 +1,45 @@
 # Rumis AI Lab
 
-A two-tier AI platform: **frontend VM** (Open WebUI, n8n, LiteLLM) provisioned via vCenter IaC, and **backend** (VLLM) on an NVIDIA DGX Spark. Persistent data lives on a Synology NAS via NFS.
+A two-tier AI platform: **frontend VM** (Open WebUI, n8n, LiteLLM) on vSphere with Azure Application Proxy for access and SSO, and **backend** (VLLM) on an NVIDIA DGX Spark.
 
 ---
 
 ## Architecture
 
 ```
-Frontend VM (vCenter)                  Backend (DGX Spark)
-┌──────────────────────────┐           ┌──────────────────┐
-│ nginx :80/:443           │           │                  │
-│  ├── oui.<domain>        │           │  VLLM :8000      │
-│  └── n8n.<domain>        │           │  (gemma-4-27b    │
-│                          │           │   NVFP4)         │
-│                          │   HTTP    │                  │
-│ Open WebUI :3000 ────────┼──────────>│                  │
-│ LiteLLM    :4000 ────────┼──────────>│                  │
-│ n8n        :5678         │           └──────────────────┘
-│ PostgreSQL :5432         │
-│                          │
-│ NFS volumes ─────────────┼──> Synology NAS
-└──────────────────────────┘    (/volume1/rumis-ai-lab)
+Azure AD
+    │
+    ▼
+Azure Application Proxy
+    ├── oui.contoso.com ──┐
+    └── n8n.contoso.com ──┤
+                          │ HTTPS (connector)
+                          ▼
+                  ┌─────────────────────────────┐
+                  │  Linux VM (vSphere)          │
+                  │                              │
+                  │  Open WebUI :3000             │
+                  │    └── OIDC → Azure AD       │        ┌──────────────┐
+                  │    └── data → /mnt/openwebui │        │ DGX Spark    │
+                  │                              │        │              │
+                  │  n8n :5678                    │        │ VLLM :8000   │
+                  │    └── OIDC → Azure AD       │        │ (gemma-4-27b │
+                  │    └── data → /mnt/n8n       │        │  NVFP4)      │
+                  │                              │  HTTP  │              │
+                  │  LiteLLM :4000 ──────────────┼───────>│              │
+                  │    (stateless)               │        └──────────────┘
+                  │                              │
+                  │  /mnt/openwebui ← VMDK #1    │
+                  │  /mnt/n8n       ← VMDK #2    │
+                  └─────────────────────────────┘
 ```
 
-| Service | Purpose | Default port |
+| Service | Purpose | Port |
 |---|---|---|
 | **Open WebUI** | Chat interface for all models | `3000` |
 | **LiteLLM** | Unified proxy — cloud APIs + VLLM backend | `4000` |
 | **n8n** | Workflow automation with MCP tool integration | `5678` |
-| **PostgreSQL** | Shared database for Open WebUI & n8n | `5432` |
 | **VLLM** | Local model inference on DGX Spark | `8000` |
-| **nginx** | SSL termination + reverse proxy | `80`/`443` |
-| **certbot** | Auto-renews Let's Encrypt certificates | — |
 
 ---
 
@@ -45,52 +53,49 @@ git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
 cd Rumis-AI-Lab/backend
 cp .env.example .env && nano .env      # set HF_TOKEN
 docker compose up -d
-docker compose logs -f vllm            # watch model download (~5 min)
 ```
 
-VLLM serves Gemma 4 27B (NVFP4) on port 8000. See [Backend Setup](docs/backend-setup.md).
+See [Backend Setup](docs/backend-setup.md).
 
 ### 2. Frontend VM (IaC)
 
 ```bash
-# Build VM template (one-time)
 cd packer
 cp variables.pkrvars.hcl.example variables.pkrvars.hcl && nano variables.pkrvars.hcl
-packer build -var-file=variables.pkrvars.hcl .
+packer init . && packer build -var-file=variables.pkrvars.hcl .
 
-# Deploy VM
 cd ../terraform
 cp terraform.tfvars.example terraform.tfvars && nano terraform.tfvars
 terraform init && terraform apply
 ```
 
-See [Frontend Setup](docs/frontend-setup.md) for the full guide including manual deployment.
+See [Frontend Setup](docs/frontend-setup.md).
 
 ### 3. Frontend VM (Manual)
 
 ```bash
 git clone https://github.com/RuminahuiM/Rumis-AI-Lab.git
 cd Rumis-AI-Lab
-cp .env.example .env && nano .env      # fill in all values
-bash scripts/init-ssl.sh               # bootstrap SSL certs
+cp .env.example .env && nano .env
 docker compose up -d
 ```
 
-Once healthy: `https://oui.yourdomain.com` (Open WebUI) and `https://n8n.yourdomain.com` (n8n).
+### 4. Azure App Proxy + SSO
+
+See [SSO Setup](docs/sso-setup.md) for Azure AD App Registration and Application Proxy configuration.
 
 ---
 
 ## Data Persistence
 
-All data is stored on the Synology NAS via NFS and survives VM re-provisioning:
+Each service gets a dedicated VMDK on the vSphere datastore (NetApp-backed), mounted into the VM:
 
-| NFS Share | Contents |
-|---|---|
-| `postgres` | PostgreSQL databases (Open WebUI + n8n) |
-| `openwebui` | Uploaded documents, files |
-| `n8n` | Workflow files, encryption key |
+| Mount | Contents | Backed up via |
+|---|---|---|
+| `/mnt/openwebui` | SQLite DB, uploaded files | vSphere snapshots |
+| `/mnt/n8n` | SQLite DB, workflow data, encryption key | vSphere snapshots |
 
-See [Storage Setup](docs/storage-setup.md) for NAS configuration.
+The VM can be re-provisioned without losing data — just re-attach the VMDKs.
 
 ---
 
@@ -98,7 +103,7 @@ See [Storage Setup](docs/storage-setup.md) for NAS configuration.
 
 ```
 Rumis-AI-Lab/
-├── docker-compose.yml            # Frontend stack (VM)
+├── docker-compose.yml            # Frontend stack (3 services)
 ├── litellm-config.yaml           # Cloud + VLLM model routing
 ├── .env.example                  # All environment variables
 │
@@ -116,21 +121,15 @@ Rumis-AI-Lab/
 │   └── variables.pkrvars.hcl.example
 │
 ├── terraform/
-│   ├── main.tf                   # VM deployment
+│   ├── main.tf                   # VM deployment + data disks
 │   ├── variables.tf              # All parameters
-│   ├── outputs.tf                # VM IP, URLs
+│   ├── outputs.tf                # VM IP, internal URLs
 │   ├── templates/cloud-init.yaml # First-boot automation
 │   └── terraform.tfvars.example
 │
-├── scripts/
-│   └── init-ssl.sh               # Bootstrap Let's Encrypt certs
-│
-├── nginx/conf.d/                 # Generated by init-ssl.sh
-├── certbot/                      # SSL cert storage (gitignored)
-│
 └── docs/
     ├── architecture.md           # Service networking and data flow
-    ├── storage-setup.md          # Synology NAS NFS configuration
+    ├── sso-setup.md              # Azure AD + App Proxy + SSO
     ├── frontend-setup.md         # VM deployment (IaC + manual)
     ├── backend-setup.md          # DGX Spark VLLM setup
     ├── managing-api-models.md    # Cloud + VLLM model configuration
@@ -145,7 +144,7 @@ Rumis-AI-Lab/
 | Guide | What it covers |
 |---|---|
 | [Architecture](docs/architecture.md) | Two-tier design, networking, data flow |
-| [Storage Setup](docs/storage-setup.md) | Synology NAS NFS shares and permissions |
+| [SSO Setup](docs/sso-setup.md) | Azure AD App Registration, App Proxy, OIDC config |
 | [Frontend Setup](docs/frontend-setup.md) | Packer + Terraform IaC or manual deploy |
 | [Backend Setup](docs/backend-setup.md) | DGX Spark VLLM, model switching |
 | [Managing API Models](docs/managing-api-models.md) | Cloud providers + VLLM via LiteLLM |
