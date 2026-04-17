@@ -32,6 +32,11 @@ litellm_master_key   = "sk-change-me-to-a-strong-secret"
 github_pat = "ghp_your-github-personal-access-token"
 git_branch = "main"
 
+# ── SSH Keys (recommended — enables key-based login, avoids relying on password) ──
+ssh_authorized_keys = [
+  # "ssh-ed25519 AAAA... user@laptop",
+]
+
 # ── Cloud API Keys (optional — leave empty to skip, add to .env later) ──
 anthropic_api_key = ""
 openai_api_key    = ""

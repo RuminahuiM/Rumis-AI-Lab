@@ -56,6 +56,7 @@ locals {
     litellm_master_key      = var.litellm_master_key
     github_pat              = var.github_pat
     git_branch              = var.git_branch
+    ssh_authorized_keys     = var.ssh_authorized_keys
     anthropic_api_key       = var.anthropic_api_key
     openai_api_key          = var.openai_api_key
     gemini_api_key          = var.gemini_api_key

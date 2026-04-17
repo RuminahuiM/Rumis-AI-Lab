@@ -18,6 +18,9 @@ autoinstall:
   packages:
     - open-vm-tools
     - cloud-init
+    - git
+    - ca-certificates
+    - curl
   late-commands:
     - echo 'rumis ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/rumis
     - chmod 440 /target/etc/sudoers.d/rumis

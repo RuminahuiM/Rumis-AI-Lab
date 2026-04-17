@@ -1,6 +1,18 @@
 #cloud-config
 package_update: true
 
+%{ if length(ssh_authorized_keys) > 0 ~}
+users:
+  - name: rumis
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [docker, sudo]
+    ssh_authorized_keys:
+%{ for key in ssh_authorized_keys ~}
+      - ${key}
+%{ endfor ~}
+%{ endif ~}
+
 disk_setup:
   /dev/sdb:
     table_type: gpt

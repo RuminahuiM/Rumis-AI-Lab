@@ -153,6 +153,12 @@ variable "git_branch" {
   description = "Git branch to checkout after cloning"
 }
 
+variable "ssh_authorized_keys" {
+  type        = list(string)
+  default     = []
+  description = "Public SSH keys to authorize for the rumis user (recommended — avoids password-only auth)"
+}
+
 # ── Cloud API Keys (optional) ───────────────────────────────────────────────
 
 variable "anthropic_api_key" {
