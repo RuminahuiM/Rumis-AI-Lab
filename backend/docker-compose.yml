@@ -24,7 +24,6 @@ services:
       HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN:-}"
     command: >
       --model ${VLLM_MODEL:-google/gemma-4-26b-a4b-it}
-      --quantization ${VLLM_QUANTIZATION:-modelopt_fp4}
       --max-model-len ${VLLM_MAX_MODEL_LEN:-8192}
       --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.90}
       --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE:-1}
