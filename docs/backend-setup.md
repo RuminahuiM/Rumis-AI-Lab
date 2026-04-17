@@ -36,7 +36,7 @@ The default configuration serves **Gemma 4 26B-A4B-IT** with NVIDIA FP4 quantiza
 
 ```env
 VLLM_MODEL=google/gemma-4-26b-a4b-it
-VLLM_QUANTIZATION=nvfp4
+VLLM_QUANTIZATION=modelopt_fp4
 VLLM_MAX_MODEL_LEN=8192
 VLLM_GPU_MEMORY_UTILIZATION=0.90
 VLLM_TENSOR_PARALLEL_SIZE=1
