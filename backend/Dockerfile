@@ -6,5 +6,8 @@
 #   docker compose up -d --build
 FROM vllm/vllm-openai:latest
 
-RUN pip install --upgrade --no-cache-dir \
-    git+https://github.com/huggingface/transformers.git
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && pip install --upgrade --no-cache-dir \
+       git+https://github.com/huggingface/transformers.git \
+    && apt-get purge -y git && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
