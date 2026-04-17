@@ -20,7 +20,7 @@ services:
     environment:
       HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN:-}"
     command: >
-      --model ${VLLM_MODEL:-google/gemma-4-27b-it}
+      --model ${VLLM_MODEL:-google/gemma-4-26b-a4b-it}
       --quantization ${VLLM_QUANTIZATION:-nvfp4}
       --max-model-len ${VLLM_MAX_MODEL_LEN:-8192}
       --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.90}

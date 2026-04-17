@@ -9,9 +9,9 @@
 
 model_list:
   # ── VLLM (DGX Spark – local inference) ────────────────────────────────────
-  - model_name: gemma-4-27b
+  - model_name: gemma-4-26b-a4b
     litellm_params:
-      model: openai/google/gemma-4-27b-it
+      model: openai/google/gemma-4-26b-a4b-it
       api_base: os.environ/VLLM_ENDPOINT
       api_key: sk-no-key-needed
 

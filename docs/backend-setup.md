@@ -26,16 +26,16 @@ docker compose up -d
 docker compose logs -f vllm    # watch model download progress
 ```
 
-The first start downloads the model from HuggingFace (~15 GB for Gemma 4 27B NVFP4). Subsequent starts are fast because the model is cached in the `huggingface_cache` volume.
+The first start downloads the model from HuggingFace (~15 GB for Gemma 4 26B-A4B NVFP4). Subsequent starts are fast because the model is cached in the `huggingface_cache` volume.
 
 ---
 
 ## Default Model
 
-The default configuration serves **Gemma 4 27B-IT** with NVIDIA FP4 quantization:
+The default configuration serves **Gemma 4 26B-A4B-IT** with NVIDIA FP4 quantization:
 
 ```env
-VLLM_MODEL=google/gemma-4-27b-it
+VLLM_MODEL=google/gemma-4-26b-a4b-it
 VLLM_QUANTIZATION=nvfp4
 VLLM_MAX_MODEL_LEN=8192
 VLLM_GPU_MEMORY_UTILIZATION=0.90
@@ -69,7 +69,7 @@ curl http://localhost:8000/v1/models
 # Test inference
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "google/gemma-4-27b-it", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "google/gemma-4-26b-a4b-it", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 ---

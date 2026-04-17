@@ -23,8 +23,8 @@ Azure Application Proxy
                   │    └── data → /mnt/openwebui │        │ DGX Spark    │
                   │                              │        │              │
                   │  n8n :5678                    │        │ VLLM :8000   │
-                  │    └── OIDC → Azure AD       │        │ (gemma-4-27b │
-                  │    └── data → /mnt/n8n       │        │  NVFP4)      │
+                  │    └── OIDC → Azure AD       │        │ (gemma-4     │
+                  │    └── data → /mnt/n8n       │        │  26b-a4b)    │
                   │                              │  HTTP  │              │
                   │  LiteLLM :4000 ──────────────┼───────>│              │
                   │    (stateless)               │        └──────────────┘

@@ -79,7 +79,7 @@ The three parts are:
 | Anthropic | `anthropic/` | `anthropic/claude-sonnet-4-20250514` |
 | OpenAI | `openai/` | `openai/gpt-4o` |
 | Google Gemini | `gemini/` | `gemini/gemini-2.5-pro-preview-06-05` |
-| VLLM (local) | `openai/` | `openai/google/gemma-4-27b-it` |
+| VLLM (local) | `openai/` | `openai/google/gemma-4-26b-a4b-it` |
 
 VLLM uses the `openai/` prefix because it exposes an OpenAI-compatible API. The `api_base` points to the VLLM endpoint instead of OpenAI's servers.
 
@@ -216,9 +216,9 @@ Check [docs.litellm.ai/docs/providers](https://docs.litellm.ai/docs/providers) f
 The VLLM backend on the DGX Spark is already configured in `litellm-config.yaml`:
 
 ```yaml
-  - model_name: gemma-4-27b
+  - model_name: gemma-4-26b-a4b
     litellm_params:
-      model: openai/google/gemma-4-27b-it
+      model: openai/google/gemma-4-26b-a4b-it
       api_base: os.environ/VLLM_ENDPOINT
       api_key: sk-no-key-needed
 ```

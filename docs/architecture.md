@@ -18,8 +18,8 @@ Internet → Azure AD → Azure Application Proxy
                   │    └── data → /mnt/openwebui │        │ DGX Spark    │
                   │                              │        │              │
                   │  n8n :5678                    │        │ VLLM :8000   │
-                  │    └── OIDC → Azure AD       │        │ (gemma-4-27b │
-                  │    └── data → /mnt/n8n       │        │  NVFP4)      │
+                  │    └── OIDC → Azure AD       │        │ (gemma-4     │
+                  │    └── data → /mnt/n8n       │        │  26b-a4b)    │
                   │                              │  HTTP  │              │
                   │  LiteLLM :4000 ──────────────┼───────>│              │
                   │    (stateless, config only)   │        └──────────────┘
@@ -62,7 +62,7 @@ Workflow automation with MCP Server Trigger for AI tool integration. Uses SQLite
 
 ### VLLM (port 8000, DGX Spark)
 
-Serves one model at a time with maximum GPU utilization. Default: Gemma 4 27B-IT with NVIDIA FP4 quantization. Runs independently on the DGX Spark.
+Serves one model at a time with maximum GPU utilization. Default: Gemma 4 26B-A4B-IT with NVIDIA FP4 quantization. Runs independently on the DGX Spark.
 
 ---
 

@@ -8,8 +8,8 @@
 # =============================================================================
 
 models:
-  - name: gemma-4-27b-nvfp4
-    model_id: google/gemma-4-27b-it
+  - name: gemma-4-26b-a4b-nvfp4
+    model_id: google/gemma-4-26b-a4b-it
     quantization: nvfp4
     max_model_len: 8192
     gpu_memory_utilization: 0.90
