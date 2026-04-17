@@ -10,7 +10,10 @@
 
 services:
   vllm:
-    image: vllm/vllm-openai:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rumis-vllm:latest
     container_name: vllm
     restart: unless-stopped
     ports:

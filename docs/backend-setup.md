@@ -102,3 +102,8 @@ sudo systemctl start vllm
 **VLLM container keeps restarting:**
 - Check logs: `docker compose logs vllm`
 - Verify NVIDIA runtime: `docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi`
+
+**`Transformers does not recognize this architecture` error:**
+- The model is newer than the Transformers version bundled in the official vLLM image
+- Fixed in this repo by extending the image with the latest Transformers (`backend/Dockerfile`)
+- If you see this after pulling a new model: `docker compose build --no-cache && docker compose up -d`
