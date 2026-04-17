@@ -137,3 +137,41 @@ variable "litellm_master_key" {
   default     = "sk-rumis-litellm-master"
   description = "LiteLLM proxy master key"
 }
+
+# ── Git Repo ────────────────────────────────────────────────────────────────
+
+variable "github_pat" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "GitHub Personal Access Token for cloning the repo (required for private repos)"
+}
+
+variable "git_branch" {
+  type        = string
+  default     = "main"
+  description = "Git branch to checkout after cloning"
+}
+
+# ── Cloud API Keys (optional) ───────────────────────────────────────────────
+
+variable "anthropic_api_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Anthropic API key (optional, can be added to .env later)"
+}
+
+variable "openai_api_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "OpenAI API key (optional, can be added to .env later)"
+}
+
+variable "gemini_api_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Google Gemini API key (optional, can be added to .env later)"
+}

@@ -27,3 +27,12 @@ oauth_client_secret_n8n = "your-n8n-client-secret"
 webui_admin_email    = "admin@example.com"
 webui_admin_password = "change-me-to-a-strong-password"
 litellm_master_key   = "sk-change-me-to-a-strong-secret"
+
+# ── Git Repo ──
+github_pat = "ghp_your-github-personal-access-token"
+git_branch = "main"
+
+# ── Cloud API Keys (optional — leave empty to skip, add to .env later) ──
+anthropic_api_key = ""
+openai_api_key    = ""
+gemini_api_key    = ""

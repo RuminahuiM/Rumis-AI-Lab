@@ -45,15 +45,20 @@ data "vsphere_virtual_machine" "template" {
 
 locals {
   cloud_init_userdata = templatefile("${path.module}/templates/cloud-init.yaml", {
-    vllm_endpoint        = var.vllm_endpoint
-    azure_tenant_id      = var.azure_tenant_id
-    oauth_client_id      = var.oauth_client_id
-    oauth_client_secret  = var.oauth_client_secret
-    oauth_client_id_n8n  = var.oauth_client_id_n8n
+    vllm_endpoint           = var.vllm_endpoint
+    azure_tenant_id         = var.azure_tenant_id
+    oauth_client_id         = var.oauth_client_id
+    oauth_client_secret     = var.oauth_client_secret
+    oauth_client_id_n8n     = var.oauth_client_id_n8n
     oauth_client_secret_n8n = var.oauth_client_secret_n8n
-    webui_admin_email    = var.webui_admin_email
-    webui_admin_password = var.webui_admin_password
-    litellm_master_key   = var.litellm_master_key
+    webui_admin_email       = var.webui_admin_email
+    webui_admin_password    = var.webui_admin_password
+    litellm_master_key      = var.litellm_master_key
+    github_pat              = var.github_pat
+    git_branch              = var.git_branch
+    anthropic_api_key       = var.anthropic_api_key
+    openai_api_key          = var.openai_api_key
+    gemini_api_key          = var.gemini_api_key
   })
 }
 

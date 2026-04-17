@@ -80,6 +80,13 @@ variable "ssh_password" {
   default   = "rumis-packer-build"
 }
 
+variable "ssh_password_hash" {
+  type        = string
+  sensitive   = true
+  default     = "$6$rDTl9zSEfgQtZC6w$5pFfMpxodYzgONoENX76t.6WEfX5ivAfiMrsssVnj.g.wunOMMxm7nChn34zPuStqp5FGLQ06ldpVCCojG0yk0"
+  description = "SHA-512 hash of ssh_password for Ubuntu autoinstall. Must match ssh_password. Regenerate with: openssl passwd -6 'your-password'"
+}
+
 source "vsphere-iso" "ubuntu" {
   vcenter_server      = var.vcenter_server
   username            = var.vcenter_username
@@ -109,7 +116,12 @@ source "vsphere-iso" "ubuntu" {
 
   iso_paths = [var.iso_path]
 
-  http_directory = "http"
+  http_content = {
+    "/user-data" = templatefile("${path.root}/http/user-data.pkrtpl", {
+      password_hash = var.ssh_password_hash
+    })
+    "/meta-data" = ""
+  }
 
   boot_command = [
     "c<wait>",

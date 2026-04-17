@@ -17,3 +17,6 @@ vm_disk_size = 40960
 
 ssh_username = "rumis"
 ssh_password = "change-me-for-build"
+
+# Must match ssh_password. Generate with: openssl passwd -6 'your-password'
+ssh_password_hash = "$6$your-generated-hash-here"

@@ -7,7 +7,7 @@ autoinstall:
   identity:
     hostname: rumis-ai-lab
     username: rumis
-    password: "$6$rounds=4096$randomsalt$placeholder"
+    password: "${password_hash}"
   ssh:
     install-server: true
     allow-pw: true
