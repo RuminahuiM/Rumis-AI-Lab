@@ -27,7 +27,6 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       VLLM_ENDPOINT: "${VLLM_ENDPOINT:?Set VLLM_ENDPOINT in .env (e.g. http://192.168.1.200:8000)}"
       LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:-sk-rumis-litellm-master}"
-      LITELLM_LOG: "DEBUG"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\" || exit 1"]
       interval: 15s
