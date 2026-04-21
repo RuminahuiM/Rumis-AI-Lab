@@ -11,8 +11,8 @@ model_list:
   # ── VLLM (DGX Spark – local inference) ────────────────────────────────────
   - model_name: gemma-4-26b-a4b
     litellm_params:
-      model: hosted_vllm/google/gemma-4-26b-a4b-it
-      api_base: os.environ/VLLM_ENDPOINT
+      model: openai/google/gemma-4-26b-a4b-it
+      api_base: "http://10.200.108.10:8000"
       api_key: sk-no-key-needed
 
   # ── Anthropic Claude ──────────────────────────────────────────────────────
