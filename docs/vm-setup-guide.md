@@ -163,7 +163,7 @@ Fill in the values relevant to your deployment:
 
 | Variable | Required | Notes |
 |---|---|---|
-| `VLLM_ENDPOINT` | **Yes** | IP/port of the DGX Spark VLLM service, e.g. `http://192.168.1.200:8000` |
+| `VLLM_ENDPOINT` | **Yes** | OpenAI-compatible URL of the DGX Spark VLLM service. **Must end with `/v1/`**, e.g. `http://192.168.1.200:8000/v1/` |
 | `ANTHROPIC_API_KEY` | One of these | Get from console.anthropic.com |
 | `OPENAI_API_KEY` | One of these | Get from platform.openai.com |
 | `GEMINI_API_KEY` | One of these | Get from aistudio.google.com |
@@ -177,7 +177,7 @@ Fill in the values relevant to your deployment:
 | `OAUTH_CLIENT_SECRET_N8N` | For SSO | Client secret for n8n App Registration |
 | `GENERIC_TIMEZONE` | Optional | Defaults to `Europe/Zurich` |
 
-> **No VLLM backend yet?** Set `VLLM_ENDPOINT=http://127.0.0.1:8000` as a
+> **No VLLM backend yet?** Set `VLLM_ENDPOINT=http://127.0.0.1:8000/v1/` as a
 > placeholder. LiteLLM will still start and serve cloud models — VLLM calls
 > will simply error until the backend is reachable.
 

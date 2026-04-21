@@ -16,7 +16,7 @@ vm_disk_size        = 40
 openwebui_disk_size = 20
 n8n_disk_size       = 10
 
-vllm_endpoint = "http://192.168.1.200:8000"
+vllm_endpoint = "http://192.168.1.200:8000/v1/"
 
 azure_tenant_id         = "your-azure-ad-tenant-id"
 oauth_client_id         = "your-openwebui-app-registration-client-id"

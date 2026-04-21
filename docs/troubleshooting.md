@@ -31,6 +31,8 @@ Healthy states: `Up (healthy)` or `Up`. Problem states: `Restarting`, `Up (unhea
 curl -sf http://<dgx-ip>:8000/v1/models
 ```
 
+**VLLM calls return 404 `{"detail":"Not Found"}`.** `VLLM_ENDPOINT` is missing the trailing `/v1/`. LiteLLM uses the OpenAI Python client which does RFC-3986 URL joining — without the trailing slash, `/v1` gets replaced by `chat/completions` and VLLM 404s. Correct format: `VLLM_ENDPOINT=http://<dgx-ip>:8000/v1/`
+
 **Refresh connections.** Open WebUI → Settings → Admin Settings → Connections → refresh.
 
 ### "Data disk not mounted"

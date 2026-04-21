@@ -85,7 +85,7 @@ variable "n8n_disk_size" {
 
 variable "vllm_endpoint" {
   type        = string
-  description = "VLLM backend URL (e.g. http://192.168.1.200:8000)"
+  description = "VLLM backend URL — must end with /v1/ (e.g. http://192.168.1.200:8000/v1/)"
 }
 
 # ── Azure AD SSO ─────────────────────────────────────────────────────────────
