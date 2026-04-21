@@ -11,8 +11,8 @@ model_list:
   # ── VLLM (DGX Spark – local inference) ────────────────────────────────────
   - model_name: gemma-4-26b-a4b
     litellm_params:
-      model: openai/google/gemma-4-26b-a4b-it
-      api_base: "http://10.200.108.10:8000"
+      model: openai/gemma-4-26b-a4b-it
+      api_base: os.environ/VLLM_ENDPOINT
       api_key: sk-no-key-needed
 
   # ── Anthropic Claude ──────────────────────────────────────────────────────
@@ -92,9 +92,6 @@ model_list:
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
-
-litellm_settings:
-  set_verbose: true
 
 general_settings:
   master_key: null
