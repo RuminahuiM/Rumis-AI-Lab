@@ -93,6 +93,9 @@ model_list:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
 
+litellm_settings:
+  set_verbose: true
+
 general_settings:
   master_key: null
   drop_params: true
