@@ -22,12 +22,17 @@ Users access Open WebUI and n8n through Azure Application Proxy, which handles T
 6. Note the **Application (client) ID** and **Directory (tenant) ID**
 7. Go to **Certificates & secrets → New client secret** → copy the value
 
+8. **Grant admin consent**: still in App registrations → your app → **API permissions** → **Grant admin consent for [tenant]**. Without this, users see a "Need admin approval" screen on first login.
+
 Add to `.env`:
 ```env
 AZURE_TENANT_ID=<tenant-id>
 OAUTH_CLIENT_ID=<client-id>
 OAUTH_CLIENT_SECRET=<client-secret>
+OPENID_REDIRECT_URI=https://<your-app-proxy-external-url>/oauth/oidc/callback
 ```
+
+`OPENID_REDIRECT_URI` is required when Open WebUI sits behind Azure App Proxy — without it, Open WebUI auto-detects the callback URL from its internal hostname (e.g. `srouizh01.local:3000`), which Azure AD will reject as a redirect URI mismatch.
 
 ---
 
@@ -108,6 +113,8 @@ Users not assigned will be denied access at the Azure AD level.
 
 ### Open WebUI
 Open WebUI has built-in OIDC support. When a user visits the login page, they see an "Azure AD" login button. Clicking it redirects to Azure AD, authenticates, and returns with a token. Open WebUI creates a local user account automatically on first login (`ENABLE_OAUTH_SIGNUP=true`).
+
+New SSO users are created with the `user` role by default (`DEFAULT_USER_ROLE=user` in docker-compose.yml) — no manual approval needed in Open WebUI. Access control is handled at the Azure layer via Enterprise Application **Users and groups** assignment. To require manual approval per-user inside Open WebUI as well, set `DEFAULT_USER_ROLE=pending` in `.env`.
 
 ### n8n
 The free n8n community edition does not include SSO. We use the **n8n-oidc** community module ([cweagans/n8n-oidc](https://github.com/cweagans/n8n-oidc)) which bolts OIDC onto n8n using its external hooks system. It supports Azure AD, auto-provisions users, and assigns roles.

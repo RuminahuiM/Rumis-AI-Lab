@@ -91,6 +91,8 @@ The redirect URI in the Azure AD App Registration must exactly match what the ap
 - OpenWebUI: `https://oui.yourdomain.com/oauth/oidc/callback`
 - n8n: check n8n-oidc docs for the exact callback path
 
+**Open WebUI sending the internal URL (e.g. `http://srouizh01.local:3000/...`)?** Set `OPENID_REDIRECT_URI` in `.env` to the public callback URL and recreate the container. Open WebUI auto-detects its callback from the request's Host header, which is the internal hostname when behind Azure App Proxy. Note: setting `WEBUI_URL` alone is not enough — Open WebUI persists it to its DB on first launch and ignores subsequent env-var changes unless `ENABLE_PERSISTENT_CONFIG=false` is also set.
+
 ### SSO login button doesn't appear in n8n
 
 Check that the n8n-oidc module loaded:

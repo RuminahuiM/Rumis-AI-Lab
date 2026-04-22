@@ -54,12 +54,21 @@ services:
       WEBUI_AUTH: "true"
       WEBUI_ADMIN_EMAIL: "${WEBUI_ADMIN_EMAIL}"
       WEBUI_ADMIN_PASSWORD: "${WEBUI_ADMIN_PASSWORD}"
+      # Make env vars authoritative — Open WebUI otherwise persists settings
+      # to its SQLite DB on first launch and ignores subsequent env changes.
+      ENABLE_PERSISTENT_CONFIG: "${ENABLE_PERSISTENT_CONFIG:-false}"
+      # Auto-grant access to Azure-AD-authenticated users (gating happens at
+      # the Enterprise Application "Users and groups" assignment).
+      DEFAULT_USER_ROLE: "${DEFAULT_USER_ROLE:-user}"
       # Azure AD OIDC SSO
       ENABLE_OAUTH_SIGNUP: "true"
       OAUTH_PROVIDER_NAME: "Azure AD"
       OAUTH_CLIENT_ID: "${OAUTH_CLIENT_ID:-}"
       OAUTH_CLIENT_SECRET: "${OAUTH_CLIENT_SECRET:-}"
       OPENID_PROVIDER_URL: "https://login.microsoftonline.com/${AZURE_TENANT_ID:-common}/v2.0/.well-known/openid-configuration"
+      # Required behind a reverse proxy (Azure App Proxy) — the auto-detected
+      # callback uses the internal hostname which Azure AD won't accept.
+      OPENID_REDIRECT_URI: "${OPENID_REDIRECT_URI:?Set OPENID_REDIRECT_URI in .env (e.g. https://your-app.msappproxy.net/oauth/oidc/callback)}"
       OAUTH_SCOPES: "openid email profile"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
