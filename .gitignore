@@ -12,3 +12,9 @@ packer/output-*/
 
 # Backend environment (contains HF_TOKEN)
 backend/.env
+
+# DGX live-as-deployed environment (contains HF_TOKEN)
+dgx/.env
+
+# Webserver VM environment
+webserver/.env
