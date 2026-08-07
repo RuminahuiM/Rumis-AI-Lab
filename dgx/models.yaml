@@ -1,0 +1,17 @@
+# =============================================================================
+# Model Catalog – tested configurations for VLLM on DGX Spark
+# =============================================================================
+# This file is a reference only (not auto-consumed by docker-compose).
+# To use a model: copy its settings into backend/.env and restart.
+#
+# Only one model runs at a time to maximize GPU memory utilization.
+# =============================================================================
+
+models:
+  - name: gemma-4-26b-a4b-nvfp4
+    model_id: google/gemma-4-26b-a4b-it
+    quantization: modelopt_fp4
+    max_model_len: 8192
+    gpu_memory_utilization: 0.90
+    tensor_parallel_size: 1
+    notes: "Default model. Gemma 4 26B-A4B with NVIDIA FP4 quantization (modelopt_fp4 in vLLM)."
