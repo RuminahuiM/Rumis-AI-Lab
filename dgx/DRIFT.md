@@ -10,6 +10,18 @@ Vergleich des **real laufenden Systems** auf `spark-753b` gegen den Repo-Stand
 - **Verbindliche Quelle:** die Compose-Labels der laufenden Container, nicht
   der Repo-Inhalt.
 
+## Rahmenbedingungen (Vorgabe Betrieb)
+
+Zwei Punkte, die die Bewertung mehrerer Abweichungen bestimmen:
+
+1. **Auf dem DGX Spark soll ausschliesslich vLLM laufen.** Monitoring läuft auf
+   einem **separaten Server**. Die auf dem DGX laufenden Services `prometheus`,
+   `grafana` und `dcgm-exporter` sind Überreste vom Go-Live und gehören hier
+   nicht hin.
+2. **Die Firewall ist zentral auf der Palo Alto geregelt**, nicht auf dem Host.
+   Dass `ufw` auf dem DGX deaktiviert ist und Ports auf `0.0.0.0` lauschen, ist
+   damit **kein Sicherheitsproblem**, sondern die vorgesehene Architektur.
+
 ---
 
 ## 0. Live-Inventar (Ist-Zustand)
@@ -156,18 +168,30 @@ Volume-Namen (`backend_*`) und die Daten „verschwinden".
 
 ---
 
-### D3 — Monitoring-Stack fehlt im Repo-Branch komplett ✅
+### D3 — Monitoring-Stack läuft auf dem DGX, gehört aber nicht hierher 📄
 
 | | |
 |---|---|
 | **Repo (XOPpb)** | nur Service `vllm`, ein Volume `huggingface_cache` |
 | **Live** | zusätzlich `prometheus`, `grafana`, `dcgm-exporter` + Volumes `prometheus_data`, `grafana_data` + `monitoring/` (Prometheus-Config, Grafana-Provisioning, Dashboard) + `MONITORING.md` |
+| **Soll (Betrieb)** | auf dem DGX **nur vLLM**; Monitoring läuft auf einem separaten Server |
 
-**Einschätzung:** Live ist richtig. Der Stack existiert real und wird benutzt
-(Prometheus scrapt vLLM erfolgreich, sichtbar als `GET /metrics` von
-`192.168.129.2` in den vLLM-Logs). Auf dem Branch
-`claude/docker-setup-guide-ARYXK` ist er bereits vorhanden (Commit `59dfb85`) —
-er fehlt nur in XOPpb. In `dgx/` dieses Branches ist er nun 1:1 enthalten.
+Der Stack läuft real: Prometheus scrapt vLLM erfolgreich, sichtbar als
+`GET /metrics` von `192.168.129.2` in den vLLM-Logs. Auf dem Branch
+`claude/docker-setup-guide-ARYXK` ist er bereits eingecheckt (Commit `59dfb85`).
+
+**Einschätzung:** Hier ist **XOPpb näher am Soll** — auf dem DGX soll nur vLLM
+laufen. Die drei Monitoring-Container sind beim Go-Live mitgewachsen und
+inzwischen redundant, weil das Monitoring auf einem separaten Server erledigt
+wird. In `dgx/` sind sie 1:1 dokumentiert, weil sie faktisch laufen; das ist
+Bestandsaufnahme, keine Empfehlung.
+
+**Konsequenz:** `prometheus`, `grafana` und `dcgm-exporter` samt `monitoring/`
+und `MONITORING.md` vom DGX abräumen und auf den Monitoring-Server verlagern
+(dort scrapt Prometheus `http://<dgx-ip>:8000/metrics` remote statt über das
+Compose-Netz). Danach belegt der DGX nur noch Port 8000 und die GPU steht
+vollständig der Inferenz zur Verfügung. **Nicht in diesem Schritt durchgeführt**
+— das wäre eine Änderung am Live-System.
 
 ---
 
@@ -223,11 +247,16 @@ Folgen:
 - 152 410 Restart-Zyklen erzeugen dauerhaft Log- und Scheduler-Last.
 
 **Einschätzung:** Beide Varianten sind falsch — das Repo beschreibt einen
-Zustand, der auf dieser Hardware nie erreichbar war. Optionen: einen arm64-
-fähigen DCGM-Exporter pinnen (`nvcr.io/nvidia/k8s/dcgm-exporter:*-ubuntu22.04`
-mit arm64-Manifest prüfen), oder den Service entfernen und die GPU-Metriken aus
-`MONITORING.md` streichen. Bis dahin ist `MONITORING.md` in diesem Punkt
-irreführend.
+Zustand, der auf dieser Hardware nie erreichbar war. Da das Monitoring ohnehin
+auf einen separaten Server gehört (D3), ist die Lösung **nicht**, ein
+arm64-fähiges Image zu suchen, sondern den Service vom DGX **zu entfernen**.
+Der Crashloop ist damit nicht nur ein fehlendes Feature, sondern reiner
+Ballast: 152 410 Restart-Zyklen auf einem Host, der nur inferieren soll.
+
+Falls GPU-Metriken später doch gebraucht werden, gehören sie auf den
+Monitoring-Server (bzw. ein dort laufender Exporter, der den DGX remote
+abfragt) — und dann mit einem Image, dessen arm64-Manifest vorher per
+`docker image inspect --format '{{.Architecture}}'` geprüft ist.
 
 ---
 
@@ -281,36 +310,37 @@ real benutzt, muss auf der VM geprüft werden.**
 
 ---
 
-### D10 — Keine Firewall auf dem DGX ❌
+### D10 — Kein Host-Firewall auf dem DGX — so vorgesehen ✅
 
 | | |
 |---|---|
 | **Repo** | Trifft für den DGX keine Aussage. `docs/troubleshooting.md` spricht nur über Ports auf der **VM** |
-| **Live** | `ufw` installiert, aber `ENABLED=no`; `nftables` inactive; 8000, 9090, 3000 lauschen auf `0.0.0.0` |
+| **Live** | `ufw` installiert, aber `ENABLED=no`; `nftables` inactive; 8000 (sowie 9090, 3000) lauschen auf `0.0.0.0` |
+| **Soll (Betrieb)** | Firewall wird **zentral auf der Palo Alto** geregelt, nicht auf dem Host |
 
-**Einschätzung:** Beides ungenügend. Der Schutz ist rein topologisch (private
-Netze, keine öffentliche IP) — es gibt keine explizite Regel, die z. B. Port
-8000 auf die Webserver-VM einschränkt. Jeder Host in `10.200.108.0/24` oder
-`10.200.200.0/24` kann das Modell ohne Authentisierung nutzen (vLLM selbst hat
-keinen API-Key konfiguriert). Empfehlung: `ufw` mit expliziten Regeln aktivieren
-(8000 nur von der Webserver-VM, 3000/9090 nur aus dem Admin-Netz) und im Repo
-dokumentieren. **Achtung:** Das ist eine Änderung am Live-System und wurde hier
-nicht durchgeführt.
+**Einschätzung:** Live ist richtig — **kein Sicherheitsproblem.** Die
+Segmentierung erfolgt auf der Palo Alto; ein zusätzliches `ufw` auf dem DGX
+wäre eine zweite, konkurrierende Regelquelle und würde die Fehlersuche
+erschweren. Kein Handlungsbedarf.
+
+Was im Repo fehlt, ist lediglich die **Dokumentation dieser Entscheidung** —
+ohne sie liest sich der Zustand für Aussenstehende wie ein Versäumnis (so hatte
+ich ihn zunächst auch bewertet). Deshalb hier festgehalten.
 
 ---
 
-### D11 — Grafana und Prometheus ohne Authentisierung öffentlich im internen Netz ❌
+### D11 — Grafana/Prometheus ohne Authentisierung — entfällt mit D3 ✅
 
 | | |
 |---|---|
 | **Repo = Live** | `GF_AUTH_ANONYMOUS_ENABLED=true`, `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`, `GF_SECURITY_ALLOW_EMBEDDING=true`, Port-Binding explizit `0.0.0.0:3000` bzw. `0.0.0.0:9090` |
 
 Hier weichen Repo und Live nicht ab — die Konfiguration ist in beiden gleich.
-Zusammen mit D10 heisst das aber: Grafana ist im gesamten internen Netz ohne
-Login als Viewer offen, Prometheus (inkl. `/api/v1/query`) ganz ohne Schutz.
 
-**Einschätzung:** Für ein Lab vertretbar, sollte aber bewusst entschieden und
-dokumentiert sein, nicht als Nebenwirkung eines Copy-Paste-Defaults bestehen.
+**Einschätzung:** Erledigt sich mit D3: Prometheus und Grafana gehören nicht auf
+den DGX und werden dort abgeräumt. Der Netzzugang ist ausserdem über die Palo
+Alto geregelt (D10). Kein eigener Handlungsbedarf — die Zugriffskontrolle für
+das Monitoring ist auf dem separaten Monitoring-Server zu bewerten.
 
 ---
 
@@ -402,16 +432,17 @@ ausgecheckt werden.
 
 | # | Thema | Bewertung |
 |---|---|---|
-| **D6** | DCGM-Exporter: amd64-Image auf arm64, 152 410 Restarts, keine GPU-Metriken | ❌ beides falsch |
+| **D3/D6** | Monitoring läuft auf dem DGX, gehört aber auf den separaten Monitoring-Server. DCGM zusätzlich im Dauer-Crashloop (amd64-Image auf arm64, 152 410 Restarts) → alle drei Services abräumen | 📄 XOPpb näher am Soll |
+| **D5/D8/D9** | `--served-model-name`, LiteLLM-Modell-ID, `/v1/`-Trailing-Slash | ✅ Live richtig, XOPpb kaputt |
 | **D1** | `vllm.service` nicht installiert, Pfad im Unit falsch | ❌ beides falsch |
 | **D2** | Live-Deployment läuft aus dem Git-Working-Tree; `checkout` bricht Bind-Mounts | ⚠️ funktioniert, riskant |
-| **D10/D11** | Keine Firewall; Grafana/Prometheus/vLLM ohne Auth im internen Netz | ❌ beides falsch |
-| **D5/D8/D9** | `--served-model-name`, LiteLLM-Modell-ID, `/v1/`-Trailing-Slash | ✅ Live richtig, XOPpb kaputt |
-| **D3** | Monitoring-Stack fehlt in XOPpb | ✅ Live richtig |
 | **D4** | `VLLM_QUANTIZATION` wirkungslos, Doku behauptet FP4 | Verhalten ✅, Doku ❌ |
 | **D12** | `HF_HUB_OFFLINE` nie auf 1 gesetzt | 📄 Repo richtig |
-| **D7/D13/D14/D16** | Dashboard-Default, CUDA-Tags, kein Backup, falscher Test-Call | ❌ klein |
+| **D13/D14/D16** | CUDA-Tags inkonsistent, kein Backup, falscher Test-Call in der Doku | ❌ klein |
+| **D10/D11** | Kein Host-Firewall, Monitoring ohne Auth | ✅ so vorgesehen (Palo Alto / D3) |
+| **D7** | Grafana-Dashboard-Default zeigt Llama-3-Pfad | entfällt mit D3 |
 
 **Nicht verändert:** Alle Feststellungen sind rein beobachtend. Es wurde kein
 Container gestoppt, keine Live-Datei editiert, keine Unit installiert und keine
-Firewall-Regel gesetzt.
+Firewall-Regel gesetzt. Insbesondere wurden die Monitoring-Container **nicht**
+entfernt, obwohl D3/D6 das empfehlen — das ist eine Betriebsentscheidung.

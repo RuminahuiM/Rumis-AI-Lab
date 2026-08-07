@@ -14,7 +14,7 @@ Erhoben ausschliesslich lesend (`docker inspect`, `docker ps`, `nvidia-smi`,
 | `docker-compose.yml` | 1:1 aus `/home/adm-dgx/Rumis-AI-Lab/backend/docker-compose.yml` |
 | `Dockerfile` | 1:1, baut `rumis-vllm:latest` aus `vllm/vllm-openai:latest` |
 | `models.yaml` | 1:1 (reine Referenz, wird nicht von Compose gelesen) |
-| `monitoring/` | 1:1, Prometheus-Config + Grafana-Provisioning (Bind-Mounts) |
+| `monitoring/` | 1:1, Prometheus-Config + Grafana-Provisioning (Bind-Mounts) — gehört nicht auf den DGX, siehe DRIFT.md D3 |
 | `scripts/setup-dgx.sh` | 1:1, Preflight-Checks |
 | `vllm.service` | 1:1 — **liegt im Repo, ist aber NICHT installiert**, siehe DRIFT.md D1 |
 | `MONITORING.md` | 1:1 |
@@ -22,12 +22,22 @@ Erhoben ausschliesslich lesend (`docker inspect`, `docker ps`, `nvidia-smi`,
 | `DEPLOYMENT.md` | Schritt-für-Schritt von frischem DGX zu diesem Zustand |
 | `DRIFT.md` | Alle Abweichungen Repo ↔ Live |
 
+## Soll-Zustand auf dem DGX: nur vLLM
+
+**Auf dem DGX Spark muss ausschliesslich vLLM laufen.** Monitoring wird von
+einem **separaten Server** übernommen, nicht von diesem Host. Die Firewall ist
+zentral auf der **Palo Alto** geregelt — nicht auf dem DGX.
+
 ## Live-Zustand in einem Satz
 
 vLLM 0.19.0 (arm64, Image `rumis-vllm:latest`) serviert
-`google/gemma-4-26b-a4b-it` als `gemma-4-26b-a4b-it` auf Port 8000, dazu
-Prometheus (9090) und Grafana (3000); DCGM-Exporter (9400) ist im
-Dauer-Crashloop, weil das Image nur amd64 ist.
+`google/gemma-4-26b-a4b-it` als `gemma-4-26b-a4b-it` auf Port 8000.
+
+Zusätzlich laufen in derselben Compose-Datei noch `prometheus` (9090),
+`grafana` (3000) und `dcgm-exporter` (9400, Dauer-Crashloop) — **Überreste vom
+Go-Live**. Sie sind hier nicht erwünscht, da das Monitoring auf dem separaten
+Server stattfindet. Sie sind in diesem Ordner 1:1 dokumentiert, weil sie real
+laufen; zum Abräumen siehe `DRIFT.md` D3/D6.
 
 ## Wichtiger Hinweis zum Auschecken
 

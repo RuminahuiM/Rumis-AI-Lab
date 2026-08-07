@@ -6,8 +6,16 @@ nicht optimal ist, steht ein Verweis auf `DRIFT.md`; solche Punkte sind bewusst
 so beschrieben, wie sie real sind, nicht wie sie sein sollten.
 
 **Zielzustand:** vLLM 0.19.0 serviert `google/gemma-4-26b-a4b-it` unter dem
-Namen `gemma-4-26b-a4b-it` auf Port 8000, dazu Prometheus (9090) und
-Grafana (3000).
+Namen `gemma-4-26b-a4b-it` auf Port 8000.
+
+> **Auf dem DGX Spark soll ausschliesslich vLLM laufen.** Das Monitoring läuft
+> auf einem **separaten Server**, die Firewall zentral auf der **Palo Alto**.
+>
+> Live laufen auf dem DGX zusätzlich noch `prometheus`, `grafana` und
+> `dcgm-exporter` aus derselben Compose-Datei — Überreste vom Go-Live. Diese
+> Anleitung beschreibt in §5 beide Wege: den **Soll-Weg** (nur vLLM) und den
+> Weg, der den Live-Zustand exakt reproduziert. Für ein Redeployment ist der
+> Soll-Weg zu nehmen.
 
 ---
 
@@ -173,7 +181,33 @@ Ergebnis live:
 
 ---
 
-## 5. Stack starten
+## 5. Starten
+
+### Soll-Weg: nur vLLM (empfohlen)
+
+```bash
+docker compose up -d vllm
+docker compose logs -f vllm
+```
+
+Der explizite Service-Name startet **nur** vLLM. `prometheus`, `grafana` und
+`dcgm-exporter` bleiben aus — sie gehören auf den separaten Monitoring-Server
+(`DRIFT.md` D3). Für ein sauberes Redeployment die drei Services zusätzlich aus
+`docker-compose.yml` entfernen, damit ein späteres `docker compose up -d` ohne
+Argument sie nicht doch wieder hochzieht; ebenso `monitoring/` und
+`MONITORING.md`.
+
+Auf dem Monitoring-Server wird vLLM dann remote gescrapt, statt über das
+Compose-Netz:
+
+```yaml
+scrape_configs:
+  - job_name: vllm-dgx
+    static_configs:
+      - targets: ['10.200.108.10:8000']
+```
+
+### Live-Weg: alle vier Services (reproduziert den Ist-Zustand)
 
 ```bash
 docker compose up -d
@@ -274,13 +308,16 @@ sind hier gelistet, weil sie sonst still mitwandern:
 
 | Punkt | Live-Zustand | Empfehlung | Ref |
 |---|---|---|---|
-| Firewall | `ufw` installiert, `ENABLED=no`; 8000/9090/3000 auf `0.0.0.0`. Schutz nur durch private Netze | `ufw` aktivieren: 8000 nur von der Webserver-VM, 3000/9090 nur aus dem Admin-Netz | D10 |
-| vLLM-Auth | kein API-Key, jeder im internen Netz kann inferieren | `--api-key` setzen und in LiteLLM hinterlegen | D10 |
-| Grafana | anonymer Viewer-Zugang, Embedding erlaubt | bewusst entscheiden oder Login aktivieren | D11 |
+| Monitoring-Services | `prometheus`, `grafana`, `dcgm-exporter` laufen mit | **Auf dem DGX nur vLLM starten** — Monitoring läuft auf einem separaten Server | D3 |
+| DCGM | Crashloop, 152 410 Restarts, keine GPU-Metriken | Service vom DGX entfernen (nicht: arm64-Image suchen) | D6 |
 | `HF_HUB_OFFLINE` | nicht gesetzt (=0) → jeder Start braucht Internet + gültigen Token | nach dem ersten Download auf `1` setzen | D12 |
-| DCGM | Crashloop, keine GPU-Metriken | arm64-fähiges Image pinnen oder Service entfernen | D6 |
 | Backups | keine — kein Cron, keine Timer | für den DGX vertretbar (Zustand ist reproduzierbar); bewusst dokumentieren | D14 |
 | Transformers-Pin | `git+…/transformers.git` ohne Commit-Pin | Commit pinnen für reproduzierbare Builds | §4 |
+
+**Kein Handlungsbedarf**, obwohl es zunächst wie eine Lücke aussieht: Auf dem
+DGX ist `ufw` deaktiviert und Port 8000 lauscht auf `0.0.0.0`. Die
+Segmentierung erfolgt **zentral auf der Palo Alto** — ein zweites Regelwerk auf
+dem Host ist nicht gewollt (`DRIFT.md` D10/D11).
 
 ---
 
