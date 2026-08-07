@@ -1,30 +1,23 @@
 # DRIFT.md — Repo ↔ Live-System (DGX Spark)
 
-Vergleich des **real laufenden Systems** auf `spark-753b` gegen den Repo-Stand
-`origin/claude/fork-new-setup-XOPpb` (Basis dieses Branches).
+Vergleich des **real laufenden Systems** auf `spark-753b` gegen den
+bisherigen Repo-Stand `origin/claude/fork-new-setup-XOPpb`.
 
 - **Erhebungsdatum:** 2026-08-07
 - **Methode:** ausschliesslich lesend (`docker inspect`, `docker ps`,
-  `nvidia-smi`, `ss -tlnp`, `systemctl`, `df -h`, `docker volume ls`). Am
-  Live-System wurde nichts verändert.
+  `nvidia-smi`, `ss -tlnp`, `systemctl`, `df -h`, `docker volume ls`)
 - **Verbindliche Quelle:** die Compose-Labels der laufenden Container, nicht
-  der Repo-Inhalt.
+  der Repo-Inhalt
 
 ## Rahmenbedingungen (Vorgabe Betrieb)
 
-Zwei Punkte, die die Bewertung mehrerer Abweichungen bestimmen:
-
-1. **Auf dem DGX Spark soll ausschliesslich vLLM laufen.** Monitoring läuft auf
-   einem **separaten Server**. Die auf dem DGX laufenden Services `prometheus`,
-   `grafana` und `dcgm-exporter` sind Überreste vom Go-Live und gehören hier
-   nicht hin.
-2. **Die Firewall ist zentral auf der Palo Alto geregelt**, nicht auf dem Host.
-   Dass `ufw` auf dem DGX deaktiviert ist und Ports auf `0.0.0.0` lauschen, ist
-   damit **kein Sicherheitsproblem**, sondern die vorgesehene Architektur.
+1. Auf dem DGX Spark läuft **ausschliesslich vLLM**. Monitoring läuft auf einem
+   separaten Server.
+2. Die Firewall wird **zentral auf der Palo Alto** geregelt, nicht auf dem Host.
 
 ---
 
-## 0. Live-Inventar (Ist-Zustand)
+## Live-Inventar
 
 ### Hardware / OS
 
@@ -33,44 +26,42 @@ Zwei Punkte, die die Bewertung mehrerer Abweichungen bestimmen:
 | Hostname | `spark-753b` |
 | Architektur | **aarch64 / arm64** |
 | Kernel | `6.17.0-1014-nvidia` |
-| GPU | 1× **NVIDIA GB10**, Persistence-Mode On |
-| NVIDIA-Treiber | **580.142**, CUDA 13.0 |
-| Storage | `/dev/nvme0n1p2` — 3.7 TB, 113 GB belegt (4 %), einzelne Partition auf `/` |
-| RAM (shm) | `/dev/shm` 61 GB |
+| GPU | 1× **NVIDIA GB10** |
+| Treiber | **580.142**, CUDA 13.0 |
+| Storage | `/dev/nvme0n1p2` — 3.7 TB, 113 GB belegt (4 %) |
 | Docker | Engine **29.2.1**, Compose-Plugin **v5.0.2** |
 
 ### Netzwerk
 
-| Interface | Adresse | Rolle |
+| Interface | Adresse | |
 |---|---|---|
 | `bond0` | `10.200.108.10/24` | Default-Route via `10.200.108.254` |
 | `enP7s7` | `10.200.200.40/24` | zweites internes Netz |
-| `wlP9s9` | — | DOWN |
-| `docker0` | `192.168.128.1/24` | DOWN (ungenutzt) |
-| `br-150dedc0b278` | `192.168.129.1/24` | Compose-Netz `backend_default` |
 
-### Container (alle aus Compose-Projekt `backend`)
+### Compose-Projekt
 
-Alle vier Container tragen dieselben Labels:
+Alle laufenden Container tragen dieselben Labels:
 
 ```
-com.docker.compose.project             = backend
-com.docker.compose.project.working_dir = /home/adm-dgx/Rumis-AI-Lab/backend
-com.docker.compose.project.config_files= /home/adm-dgx/Rumis-AI-Lab/backend/docker-compose.yml
-com.docker.compose.project.environment_file = (leer — Default backend/.env)
-com.docker.compose.version             = 5.0.2
+com.docker.compose.project              = backend
+com.docker.compose.project.working_dir  = /home/adm-dgx/Rumis-AI-Lab/backend
+com.docker.compose.project.config_files = .../backend/docker-compose.yml
+com.docker.compose.project.environment_file = (leer → Default backend/.env)
+com.docker.compose.version              = 5.0.2
 ```
 
-| Container | Image | Status | Ports (Host) |
+### Container
+
+| Container | Image | Status | Port |
 |---|---|---|---|
-| `vllm` | `rumis-vllm:latest` (arm64, lokal gebaut 2026-04-17) | Up 3 months, **healthy** | `0.0.0.0:8000` + `[::]:8000` |
-| `prometheus` | `prom/prometheus:latest` (arm64) | Up 3 months | `0.0.0.0:9090` |
-| `grafana` | `grafana/grafana:latest` (arm64) | Up 3 months | `0.0.0.0:3000` |
+| `vllm` | `rumis-vllm:latest` (arm64, gebaut 2026-04-17) | Up 3 months, **healthy** | `0.0.0.0:8000` |
+| `prometheus` | `prom/prometheus:latest` | Up 3 months | `0.0.0.0:9090` |
+| `grafana` | `grafana/grafana:latest` | Up 3 months | `0.0.0.0:3000` |
 | `dcgm-exporter` | `nvcr.io/nvidia/k8s/dcgm-exporter:latest` (**amd64**) | **Restarting (255)** | `127.0.0.1:9400` |
 
-Container `vllm` erstellt am **2026-04-23 08:39 UTC**, seither ununterbrochen.
+`vllm` erstellt am 2026-04-23 08:39 UTC, seither ununterbrochen.
 
-### Real laufender vLLM-Prozess
+### Laufender vLLM-Prozess
 
 ```
 Entrypoint: ["vllm","serve"]
@@ -81,206 +72,132 @@ Cmd:        --model google/gemma-4-26b-a4b-it
             --tensor-parallel-size 1
             --host 0.0.0.0 --port 8000
 Env:        HUGGING_FACE_HUB_TOKEN=<gesetzt>, HF_HUB_OFFLINE=0
-Volume:     backend_huggingface_cache -> /root/.cache/huggingface
+Volume:     backend_huggingface_cache → /root/.cache/huggingface
 ```
 
 Im Image: **vLLM 0.19.0**, **transformers 5.6.0.dev0**.
-`GET /v1/models` liefert live: `id=gemma-4-26b-a4b-it`,
+`GET /v1/models` liefert `id=gemma-4-26b-a4b-it`,
 `root=google/gemma-4-26b-a4b-it`, `max_model_len=8192`.
 
 ### Volumes
 
 `backend_huggingface_cache`, `backend_prometheus_data`, `backend_grafana_data`
-— alle vorhanden, Präfix `backend_` durch den Compose-Projektnamen.
-
-### Firewall / Erreichbarkeit von Port 8000
-
-- `ufw` ist installiert, aber in `/etc/ufw/ufw.conf` steht **`ENABLED=no`**.
-- `nftables.service` ist **inactive**.
-- `ss -tlnp`: Port 8000 lauscht auf **`0.0.0.0` und `[::]`**, ebenso 9090 und 3000.
-
-**Port 8000 ist also host-seitig nicht eingeschränkt.** Dass der Dienst „nur
-intern erreichbar" ist, ergibt sich allein aus der **Netz-Topologie**: der DGX
-hat ausschliesslich private Adressen (`10.200.108.10`, `10.200.200.40`), keine
-öffentliche IP und kein Port-Forwarding. Es ist **keine** Firewall-Regel, die
-das absichert.
+— Präfix `backend_` durch den Compose-Projektnamen.
 
 ### systemd / Autostart
 
-- `vllm.service`: **nicht installiert** (`Unit vllm.service could not be found`).
-- `/etc/systemd/system/`: keine Rumis-/vLLM-Unit vorhanden.
-- `/opt/rumis-ai-lab`: **existiert nicht**.
-- `docker.service`: enabled + active.
-- Autostart erfolgt faktisch über `restart: unless-stopped` in der Compose-Datei.
+- `vllm.service`: **nicht installiert**, `/opt/rumis-ai-lab` existiert nicht
+- `docker.service`: enabled + active
+- Autostart faktisch über `restart: unless-stopped`
+
+### Firewall
+
+`ufw` installiert, aber `/etc/ufw/ufw.conf` → `ENABLED=no`; `nftables` inactive.
+Port 8000 (sowie 9090, 3000) lauschen auf `0.0.0.0`. **So vorgesehen** — die
+Segmentierung erfolgt auf der Palo Alto, ein zweites Regelwerk auf dem Host ist
+nicht gewollt.
 
 ### Cron
 
-`crontab -l` für `adm-dgx`: leer. `/etc/cron.d/`: nur Distro-Defaults
-(`anacron`, `e2scrub_all`, `sysstat`). **Keine Backups, keine Wartungsjobs.**
+Keine User-Crontab, in `/etc/cron.d/` nur Distro-Defaults. Keine Backups, keine
+Wartungsjobs. Für den DGX vertretbar: der Zustand ist reproduzierbar (Modell aus
+HuggingFace, Config aus diesem Repo).
 
 ---
 
-## 1. Abweichungen
+## Abweichungen
 
 Bewertung: **✅ Live ist richtig** · **📄 Repo ist richtig** · **❌ beides falsch**
 
 ---
 
-### D1 — `vllm.service` ist nicht installiert, und der Pfad im Unit ist falsch ❌
+### D1 — Monitoring läuft auf dem DGX, gehört aber nicht hierher ❌
+
+| | |
+|---|---|
+| **Repo (XOPpb)** | nur Service `vllm` |
+| **Live** | zusätzlich `prometheus`, `grafana`, `dcgm-exporter` + `monitoring/`-Configs, Grafana-Provisioning, vLLM-Dashboard, `MONITORING.md`, Volumes `prometheus_data`/`grafana_data` |
+| **Soll** | nur vLLM; Monitoring auf separatem Server |
+
+Der Stack läuft real — Prometheus scrapt vLLM erfolgreich über das Compose-Netz,
+sichtbar als `GET /metrics` von `192.168.129.2` in den vLLM-Logs. Er ist beim
+Go-Live mitgewachsen und inzwischen redundant.
+
+**`dcgm-exporter` hat dabei nie funktioniert:** Das Image ist
+`Architecture=amd64` (und von 2022), der Host ist aarch64 →
+`exec /usr/local/dcgm/dcgm-exporter-entrypoint.sh: exec format error`,
+**152 410 Restarts**. Das Prometheus-Target `dcgm` war permanent DOWN; es gab nie
+GPU-Metriken (`DCGM_FI_DEV_*`), obwohl `MONITORING.md` sie dokumentierte.
+
+**Einschätzung:** Hier ist **XOPpb näher am Soll**. Die drei Services samt
+`monitoring/` und `MONITORING.md` sind deshalb **nicht** Teil von `dgx/`.
+Falls GPU-Metriken gebraucht werden, gehören sie auf den Monitoring-Server —
+dort scrapt Prometheus vLLM remote:
+
+```yaml
+scrape_configs:
+  - job_name: vllm-dgx
+    static_configs:
+      - targets: ['10.200.108.10:8000']
+```
+
+**Offen auf dem Live-System:** die drei Container laufen weiter. Sie zu
+entfernen ist eine Betriebsentscheidung und wurde hier nicht durchgeführt.
+Der Crashloop ist reiner Ballast auf einem Host, der nur inferieren soll.
+
+---
+
+### D2 — `vllm.service` ist nicht installiert, und der Pfad im Unit war falsch ❌
 
 | | |
 |---|---|
 | **Repo** | `backend/vllm.service` mit `WorkingDirectory=/opt/rumis-ai-lab/backend`; `docs/backend-setup.md` beschreibt `systemctl enable vllm` |
 | **Live** | Unit nicht installiert, `/opt/rumis-ai-lab` existiert nicht. Autostart nur über `restart: unless-stopped` |
 
-Der Unit im Repo würde in dieser Form **nicht funktionieren** — das
-Deployment liegt in `/home/adm-dgx/Rumis-AI-Lab/backend`, nicht in
-`/opt/rumis-ai-lab/backend`.
+Der Unit hätte in dieser Form nicht funktioniert — das Deployment liegt in
+`/home/adm-dgx/Rumis-AI-Lab/backend`.
 
-**Einschätzung:** Beides ist unbefriedigend. `restart: unless-stopped` +
-`docker.service enabled` überlebt einen Reboot und ist für dieses Lab
-ausreichend — das ist der Grund, warum der fehlende Unit nie aufgefallen ist.
-Empfehlung: Unit auf den echten Pfad korrigieren **und** installieren (dann ist
-der Start explizit und `systemctl status` aussagekräftig), oder den Unit aus dem
-Repo entfernen und die Doku auf `restart: unless-stopped` umstellen. Auf keinen
-Fall so lassen: aktuell verspricht die Doku etwas, was nicht existiert.
+**Einschätzung:** `restart: unless-stopped` + enabled `docker.service` übersteht
+einen Reboot; genau deshalb ist der fehlende Unit nie aufgefallen. Da er live
+nicht existiert und nicht gebraucht wird, ist er **nicht** Teil von `dgx/` —
+statt eine Datei mitzuschleppen, die etwas verspricht, was nicht läuft,
+dokumentiert `DEPLOYMENT.md` den real wirksamen Mechanismus.
 
 ---
 
-### D2 — Deployment-Pfad: Repo-Working-Tree statt `/opt` ✅ (mit Vorbehalt)
+### D3 — Live-Deployment läuft aus dem Git-Working-Tree ⚠️
 
 | | |
 |---|---|
 | **Repo** | `/opt/rumis-ai-lab` (`docs/frontend-setup.md`, `vllm.service`) |
-| **Live** | `/home/adm-dgx/Rumis-AI-Lab` — ein **Git-Working-Tree**, ausgecheckt auf Branch `claude/docker-setup-guide-ARYXK`. Compose-Projektname daraus abgeleitet: `backend` |
+| **Live** | `/home/adm-dgx/Rumis-AI-Lab` — ein Git-Working-Tree, ausgecheckt auf `claude/docker-setup-guide-ARYXK`. Compose-Projektname daraus abgeleitet: `backend` |
 
-**Einschätzung:** Live ist der Ist-Zustand und funktioniert, hat aber eine
-gefährliche Eigenschaft: Prometheus und Grafana binden Dateien aus
-`backend/monitoring/` direkt ein. Ein `git checkout`/`git pull` in diesem
-Verzeichnis verändert damit **laufende Bind-Mount-Quellen**. Konkret würde ein
-Auschecken dieses Branches (`live/as-deployed`, Basis XOPpb) dort
-`backend/monitoring/*` löschen und Grafana/Prometheus beim nächsten Restart
-brechen. Empfehlung: Deployment-Verzeichnis vom Git-Arbeitsverzeichnis trennen
-(Repo klonen nach `/opt/rumis-ai-lab`, oder `git worktree` benutzen).
-Der Projektname sollte dann explizit gesetzt werden (`name: rumis-backend` in
-der Compose-Datei), sonst ändern sich mit dem Verzeichnisnamen die
-Volume-Namen (`backend_*`) und die Daten „verschwinden".
+**Einschätzung:** Funktioniert, hat aber eine gefährliche Eigenschaft:
+Prometheus und Grafana binden Dateien aus `backend/monitoring/` ein, ein
+`git checkout`/`git pull` verändert damit **laufende Bind-Mount-Quellen**.
+Konkret würde ein Checkout dieses Branches dort `backend/` komplett entfernen.
+
+Empfehlung: Deployment-Verzeichnis vom Git-Arbeitsverzeichnis trennen (Klon nach
+`/opt/rumis-ai-lab`, oder `git worktree`). `dgx/docker-compose.yml` setzt den
+Projektnamen deshalb explizit auf `rumis-dgx` — bewusst **nicht** `backend`,
+damit ein Start aus `dgx/` nie mit dem laufenden Live-Projekt kollidiert.
 
 ---
 
-### D3 — Monitoring-Stack läuft auf dem DGX, gehört aber nicht hierher 📄
-
-| | |
-|---|---|
-| **Repo (XOPpb)** | nur Service `vllm`, ein Volume `huggingface_cache` |
-| **Live** | zusätzlich `prometheus`, `grafana`, `dcgm-exporter` + Volumes `prometheus_data`, `grafana_data` + `monitoring/` (Prometheus-Config, Grafana-Provisioning, Dashboard) + `MONITORING.md` |
-| **Soll (Betrieb)** | auf dem DGX **nur vLLM**; Monitoring läuft auf einem separaten Server |
-
-Der Stack läuft real: Prometheus scrapt vLLM erfolgreich, sichtbar als
-`GET /metrics` von `192.168.129.2` in den vLLM-Logs. Auf dem Branch
-`claude/docker-setup-guide-ARYXK` ist er bereits eingecheckt (Commit `59dfb85`).
-
-**Einschätzung:** Hier ist **XOPpb näher am Soll** — auf dem DGX soll nur vLLM
-laufen. Die drei Monitoring-Container sind beim Go-Live mitgewachsen und
-inzwischen redundant, weil das Monitoring auf einem separaten Server erledigt
-wird. In `dgx/` sind sie 1:1 dokumentiert, weil sie faktisch laufen; das ist
-Bestandsaufnahme, keine Empfehlung.
-
-**Konsequenz:** `prometheus`, `grafana` und `dcgm-exporter` samt `monitoring/`
-und `MONITORING.md` vom DGX abräumen und auf den Monitoring-Server verlagern
-(dort scrapt Prometheus `http://<dgx-ip>:8000/metrics` remote statt über das
-Compose-Netz). Danach belegt der DGX nur noch Port 8000 und die GPU steht
-vollständig der Inferenz zur Verfügung. **Nicht in diesem Schritt durchgeführt**
-— das wäre eine Änderung am Live-System.
-
----
-
-### D4 — `VLLM_QUANTIZATION` ist eine toten Variable ✅ / 📄
-
-| | |
-|---|---|
-| **Repo** | `.env.example`: auskommentiert, mit Hinweis „Add `--quantization` to docker-compose command if needed". `docs/backend-setup.md` behauptet dagegen, der Default sei „**with NVIDIA FP4 quantization**" und listet `VLLM_QUANTIZATION=modelopt_fp4` |
-| **Live** | `.env` **setzt** `VLLM_QUANTIZATION=modelopt_fp4`, aber die Compose-Datei liest die Variable nirgends → der laufende Container hat **kein `--quantization`-Flag** |
-
-Das war eine bewusste Entscheidung: Commit `b75a3fe` „fix(backend): drop
-quantization flag for Gemma 4 26B-A4B". Die Zeile in der Live-`.env` ist ein
-Rückstand davon.
-
-**Einschätzung:** Das Verhalten (kein Quantization-Flag) ist richtig — es läuft
-seit 3 Monaten stabil und healthy. Falsch sind zwei Dinge: die Zeile in der
-Live-`.env` (wirkungslos, suggeriert aber FP4) und `docs/backend-setup.md`, das
-FP4-Quantisierung behauptet. Beides bereinigen; die Variable entweder entfernen
-oder in der Compose-Datei tatsächlich auswerten.
-
----
-
-### D5 — `--served-model-name` fehlt in XOPpb ✅
+### D4 — `--served-model-name` fehlte im Repo ✅
 
 | | |
 |---|---|
 | **Repo (XOPpb)** | kein `--served-model-name` → vLLM würde als `google/gemma-4-26b-a4b-it` servieren |
-| **Live** | `--served-model-name gemma-4-26b-a4b-it`; `.env` hat `VLLM_SERVED_MODEL_NAME=gemma-4-26b-a4b-it` |
+| **Live** | `--served-model-name gemma-4-26b-a4b-it` |
 
-**Einschätzung:** Live ist richtig und ist die Kernanpassung des Go-Live
+**Einschätzung:** Live ist richtig und das ist die Kernanpassung des Go-Live
 (Commits `0f1c6cb`, `c95809f`): der Slash in `google/…` bricht die
-Modell-Auflösung in LiteLLM. Ohne dieses Flag ist der Stack Ende-zu-Ende kaputt.
-Muss zwingend im Repo bleiben.
+Modell-Auflösung in LiteLLM. Ohne das Flag ist der Stack Ende-zu-Ende kaputt.
 
 ---
 
-### D6 — DCGM-Exporter läuft seit dem ersten Tag nicht ❌ (wichtigster Fund)
-
-| | |
-|---|---|
-| **Repo** | `nvcr.io/nvidia/k8s/dcgm-exporter:latest`, `MONITORING.md` dokumentiert `DCGM_FI_DEV_*`-Metriken als verfügbar |
-| **Live** | **`Restarting (255)`, 152 410 Restarts.** Log: `exec /usr/local/dcgm/dcgm-exporter-entrypoint.sh: exec format error` |
-
-Ursache: Das Image ist **`Architecture=amd64`** (und von 2022), der Host ist
-**aarch64**. Der `:latest`-Tag dieses Repos ist kein Multi-Arch-Manifest — es
-wurde ein x86-Image gezogen, das auf dem GB10 grundsätzlich nicht startbar ist.
-
-Folgen:
-- Prometheus-Target `dcgm` ist **permanent DOWN**.
-- **Alle** GPU-Metriken aus `MONITORING.md` (`DCGM_FI_DEV_GPU_UTIL`,
-  `DCGM_FI_DEV_FB_USED`, …) existieren nicht. Es gibt live **keine**
-  GPU-Auslastungs-Überwachung, nur die vLLM-eigenen Metriken.
-- 152 410 Restart-Zyklen erzeugen dauerhaft Log- und Scheduler-Last.
-
-**Einschätzung:** Beide Varianten sind falsch — das Repo beschreibt einen
-Zustand, der auf dieser Hardware nie erreichbar war. Da das Monitoring ohnehin
-auf einen separaten Server gehört (D3), ist die Lösung **nicht**, ein
-arm64-fähiges Image zu suchen, sondern den Service vom DGX **zu entfernen**.
-Der Crashloop ist damit nicht nur ein fehlendes Feature, sondern reiner
-Ballast: 152 410 Restart-Zyklen auf einem Host, der nur inferieren soll.
-
-Falls GPU-Metriken später doch gebraucht werden, gehören sie auf den
-Monitoring-Server (bzw. ein dort laufender Exporter, der den DGX remote
-abfragt) — und dann mit einem Image, dessen arm64-Manifest vorher per
-`docker image inspect --format '{{.Architecture}}'` geprüft ist.
-
----
-
-### D7 — Grafana-Dashboard zeigt per Default das falsche Modell 📄→❌
-
-Das Dashboard `monitoring/grafana/provisioning/dashboards/vllm.json` (aus dem
-vLLM-Upstream-Sample übernommen) hat als Default der Template-Variable
-`model_name`:
-
-```
-/share/datasets/public_models/Meta-Llama-3-8B-Instruct
-```
-
-Live heisst das Modell `gemma-4-26b-a4b-it`. Alle Panels filtern auf
-`model_name="$model_name"` und bleiben leer, bis die Variable manuell
-umgestellt wird.
-
-**Einschätzung:** Kosmetisch, aber es ist genau der Grund, warum ein Dashboard
-„No data" zeigt, obwohl das Scraping funktioniert. Default auf den echten
-`VLLM_SERVED_MODEL_NAME` setzen.
-
----
-
-### D8 — LiteLLM-Modell-ID (Webserver-Seite, hängt an D5) ✅
+### D5 — LiteLLM-Modell-ID (Webserver-Seite, hängt an D4) ✅
 
 | | |
 |---|---|
@@ -288,161 +205,110 @@ umgestellt wird.
 | **Live-DGX** | serviert `gemma-4-26b-a4b-it` (ohne `google/`) |
 | **Korrektur auf ARYXK** | `model: openai/gemma-4-26b-a4b-it` (Commit `c95809f`) |
 
-**Einschätzung:** Die XOPpb-Variante passt nicht zum live servierten Namen und
-würde 404 liefern. Die ARYXK-Variante ist richtig. **Muss auf der Webserver-VM
-verifiziert werden** — was dort real in `litellm-config.yaml` steht, ist von
-hier aus nicht feststellbar.
+**Einschätzung:** Die XOPpb-Variante passt nicht zum servierten Namen und würde
+404 liefern; ARYXK ist richtig. **Auf der Webserver-VM zu verifizieren** — was
+dort real steht, ist von hier aus nicht feststellbar.
 
 ---
 
-### D9 — `VLLM_ENDPOINT`: Trailing Slash und falsche Beispiel-IP ✅ / ❌
+### D6 — `VLLM_ENDPOINT`: Trailing Slash und Beispiel-IP ✅ / ❌
 
 | | |
 |---|---|
 | **Repo (XOPpb)** | `VLLM_ENDPOINT=http://192.168.1.200:8000` |
-| **Korrektur auf ARYXK** | `http://192.168.1.200:8000/v1/` — ohne Trailing Slash ersetzt der OpenAI-Client `/v1` per RFC 3986 durch den Pfad und vLLM antwortet 404 (Commit `9899833`) |
-| **Live-DGX** | erreichbar unter `http://10.200.108.10:8000` (bond0, Default-Route) bzw. `http://10.200.200.40:8000` (enP7s7) |
+| **Korrektur auf ARYXK** | `http://192.168.1.200:8000/v1/` — ohne Trailing Slash ersetzt der OpenAI-Client `/v1` per RFC 3986 durch den Endpoint-Pfad, vLLM antwortet 404 (Commit `9899833`) |
+| **Live-DGX** | erreichbar unter `http://10.200.108.10:8000` bzw. `http://10.200.200.40:8000` |
 
-**Einschätzung:** Der Trailing Slash ist zwingend (ARYXK richtig). Die IP
-`192.168.1.200` existiert in diesem Netz nirgends — sie ist ein Platzhalter, der
-wie ein echter Wert aussieht. **Welche der beiden DGX-Adressen die Webserver-VM
-real benutzt, muss auf der VM geprüft werden.**
+**Einschätzung:** Der Trailing Slash ist zwingend. Die IP `192.168.1.200`
+existiert in diesem Netz nirgends — ein Platzhalter, der wie ein echter Wert
+aussieht. Welche der beiden DGX-Adressen die VM real benutzt, ist dort zu prüfen.
 
 ---
 
-### D10 — Kein Host-Firewall auf dem DGX — so vorgesehen ✅
+### D7 — `VLLM_QUANTIZATION` ist eine tote Variable ✅ / ❌
 
 | | |
 |---|---|
-| **Repo** | Trifft für den DGX keine Aussage. `docs/troubleshooting.md` spricht nur über Ports auf der **VM** |
-| **Live** | `ufw` installiert, aber `ENABLED=no`; `nftables` inactive; 8000 (sowie 9090, 3000) lauschen auf `0.0.0.0` |
-| **Soll (Betrieb)** | Firewall wird **zentral auf der Palo Alto** geregelt, nicht auf dem Host |
+| **Repo** | `.env.example`: auskommentiert. `docs/backend-setup.md` behauptet dagegen, der Default sei „**with NVIDIA FP4 quantization**" |
+| **Live** | `.env` **setzt** `VLLM_QUANTIZATION=modelopt_fp4`, aber die Compose-Datei liest die Variable nirgends → der Container hat **kein `--quantization`-Flag** |
 
-**Einschätzung:** Live ist richtig — **kein Sicherheitsproblem.** Die
-Segmentierung erfolgt auf der Palo Alto; ein zusätzliches `ufw` auf dem DGX
-wäre eine zweite, konkurrierende Regelquelle und würde die Fehlersuche
-erschweren. Kein Handlungsbedarf.
+Bewusste Entscheidung: Commit `b75a3fe` „drop quantization flag for Gemma 4
+26B-A4B". Die Zeile in der Live-`.env` ist ein Rückstand davon.
 
-Was im Repo fehlt, ist lediglich die **Dokumentation dieser Entscheidung** —
-ohne sie liest sich der Zustand für Aussenstehende wie ein Versäumnis (so hatte
-ich ihn zunächst auch bewertet). Deshalb hier festgehalten.
+**Einschätzung:** Das Verhalten (kein Flag) ist richtig — läuft seit 3 Monaten
+healthy. Falsch sind die wirkungslose Zeile in der Live-`.env` und die
+Doku-Aussage zu FP4. In `dgx/.env.example` ist die Variable mit explizitem
+Hinweis erhalten, weil sie in der echten `.env` steht; sie kann dort
+weggelassen werden, ohne dass sich etwas ändert.
 
 ---
 
-### D11 — Grafana/Prometheus ohne Authentisierung — entfällt mit D3 ✅
+### D8 — `HF_HUB_OFFLINE` ist live nicht gesetzt 📄
 
 | | |
 |---|---|
-| **Repo = Live** | `GF_AUTH_ANONYMOUS_ENABLED=true`, `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`, `GF_SECURITY_ALLOW_EMBEDDING=true`, Port-Binding explizit `0.0.0.0:3000` bzw. `0.0.0.0:9090` |
+| **Repo** | Commit `4c68d68` führt die Variable ein: nach dem ersten Download auf `1` setzen |
+| **Live** | in `.env` nicht gesetzt → Compose-Default `0` |
 
-Hier weichen Repo und Live nicht ab — die Konfiguration ist in beiden gleich.
-
-**Einschätzung:** Erledigt sich mit D3: Prometheus und Grafana gehören nicht auf
-den DGX und werden dort abgeräumt. Der Netzzugang ist ausserdem über die Palo
-Alto geregelt (D10). Kein eigener Handlungsbedarf — die Zugriffskontrolle für
-das Monitoring ist auf dem separaten Monitoring-Server zu bewerten.
-
----
-
-### D12 — `HF_HUB_OFFLINE` ist live nicht gesetzt 📄
-
-| | |
-|---|---|
-| **Repo** | Commit `4c68d68` führt `HF_HUB_OFFLINE` ein, `.env.example` erklärt: nach dem ersten Download auf `1` setzen |
-| **Live** | in `.env` **nicht** gesetzt → Compose-Default `0` → Container hat `HF_HUB_OFFLINE=0` |
-
-**Einschätzung:** Die Repo-Empfehlung ist richtig und wurde live nie umgesetzt.
-Solange `0` gilt, braucht jeder Container-Start Internet-Zugriff auf
-huggingface.co und einen gültigen `HF_TOKEN` — ein abgelaufener Token oder eine
-Netzsperre verhindert dann den Start, obwohl das Modell lokal im Volume liegt.
-Auf `1` zu setzen macht den Start robust. (Änderung am Live-System — hier nicht
-durchgeführt.)
+**Einschätzung:** Die Repo-Empfehlung ist richtig und wurde nie umgesetzt.
+Mit `0` braucht jeder Container-Start Internet-Zugriff auf huggingface.co und
+einen gültigen `HF_TOKEN` — ein abgelaufener Token oder eine Netzsperre
+verhindert den Start, obwohl das Modell lokal im Volume liegt. Auf `1` zu setzen
+macht den Start robust. (Änderung am Live-System, hier nicht durchgeführt.)
 
 ---
 
-### D13 — Preflight-Script und Doku nennen inkonsistente CUDA-Test-Images ❌ (klein)
+### D9 — Transformers wird ohne Pin aus dem Git-Master installiert ❌ (klein)
 
-| | |
-|---|---|
-| `scripts/setup-dgx.sh` | Smoke-Test mit `nvidia/cuda:12.4.0-base-ubuntu22.04` |
-| `MONITORING.md` | Troubleshooting mit `nvidia/cuda:12.0.0-base-ubuntu22.04` |
-| **Live** | Treiber 580.142 / CUDA 13.0, Host arm64 |
+`Dockerfile`: `pip install git+https://github.com/huggingface/transformers.git`.
+Im Live-Image steckt `5.6.0.dev0`. Ein Rebuild zu einem späteren Zeitpunkt
+ergibt eine andere Version — das Image ist nicht reproduzierbar.
 
-**Einschätzung:** Zwei verschiedene Tags für denselben Zweck, beide deutlich
-älter als der Live-Stack. Angesichts von D6 (amd64-Image auf arm64) sollte der
-Smoke-Test ausserdem explizit die Architektur prüfen — genau dieser Fehler wäre
-damit beim Deployment aufgefallen. Auf ein Tag vereinheitlichen und
-`docker image inspect --format '{{.Architecture}}'` in die Checks aufnehmen.
+**Einschätzung:** Für exakte Reproduzierbarkeit den Commit pinnen. Solange das
+laufende Image existiert, unkritisch; bei einem Neuaufbau kann es kippen.
 
 ---
 
-### D14 — Repo enthält keinerlei Backup/Retention-Konzept ❌ (klein)
+### D10 — Preflight-Script prüft die Architektur nicht ❌ (klein)
 
-| | |
-|---|---|
-| **Live** | kein Cron, keine systemd-Timer. Prometheus-Retention 30 d; `grafana_data` und `prometheus_data` liegen unbesichert in Docker-Volumes |
-| **Repo** | keine Aussage |
+`scripts/setup-dgx.sh` testet Treiber, Docker, Container Toolkit und GPU-Zugriff,
+aber nicht, ob ein Image überhaupt arm64 ist. Genau daran ist DCGM gescheitert
+(D1). Der Smoke-Test nutzt ausserdem `nvidia/cuda:12.4.0-base-ubuntu22.04`,
+deutlich älter als der Live-Stack (Treiber 580.142 / CUDA 13.0).
 
-**Einschätzung:** Für den DGX unkritisch — der Zustand ist reproduzierbar
-(Modell aus HF, Dashboards aus dem Provisioning). Sollte aber bewusst als
-„bewusst kein Backup" dokumentiert sein. Die wirklich schützenswerten Daten
-(n8n-Workflows, Open-WebUI-Chats) liegen auf der Webserver-VM und sind dort zu
-prüfen.
+**Einschätzung:** `docker image inspect --format '{{.Architecture}}'` in die
+Checks aufnehmen — dieser Fehler wäre damit beim Deployment aufgefallen.
 
 ---
 
-### D15 — Packer/Terraform/VMDK betreffen nicht den DGX ✅ (organisatorisch)
+### D11 — Repo-Struktur mischte beide Tiers ✅ (organisatorisch, mit diesem Branch behoben)
 
-`packer/`, `terraform/` und die VMDK-/vSphere-Beschreibungen provisionieren die
-**Webserver-VM**, nicht den DGX. Der DGX wurde manuell aufgesetzt: eine einzige
-NVMe (`/dev/nvme0n1p2`, 3.7 TB, 113 GB belegt), keine separate Datenpartition,
-HF-Cache im Docker-Volume `backend_huggingface_cache`.
+Im Repo-Root lagen Webserver-Material (`docker-compose.yml`,
+`litellm-config.yaml`, `nginx/`, `.env.example`) und DGX-Material (`backend/`)
+nebeneinander, dazu `packer/` und `terraform/` für die Webserver-VM sowie
+`docs/`, die beide Tiers vermischten.
 
-**Einschätzung:** Kein Widerspruch, aber irreführende Ordnerstruktur — im
-Repo-Root liegt Webserver-Material neben DGX-Material. Genau das adressiert die
-neue Trennung `dgx/` ↔ `webserver/`.
-
----
-
-### D16 — `docs/backend-setup.md`: Test-Request würde live fehlschlagen ✅ (klein, Folge von D5)
-
-Der dokumentierte Test-Call verwendet `"model": "google/gemma-4-26b-a4b-it"`.
-Live ist der gültige Name `gemma-4-26b-a4b-it`; mit dem `google/`-Prefix
-antwortet vLLM mit „model not found".
-
-**Einschätzung:** Doku nachziehen — sonst schlägt die erste Verifikation nach
-einem Redeployment fehl und sieht wie ein Deployment-Fehler aus.
+**Einschätzung:** Auf diesem Branch ist der Root auf `dgx/` und `webserver/`
+reduziert; alles nicht auf dem DGX Genutzte ist entfernt. Der bisherige Stand
+bleibt in `claude/docker-setup-guide-ARYXK` und der Git-Historie erhalten. Die
+Inhalte für `webserver/` werden im zweiten Schritt auf der VM erhoben.
 
 ---
 
-### D17 — Verzeichnis-Duplikat `backend/` ↔ `dgx/` (durch diesen Branch neu)
-
-Auf diesem Branch existiert der DGX-Stand jetzt zweimal: als historisches
-`backend/` (aus XOPpb) und als `dgx/` (Live-Abbild). Das ist bewusst so —
-Aufräumen war für diesen Schritt ausdrücklich ausgeklammert.
-
-**Einschätzung:** Vor einem Merge auflösen: `backend/` entfernen, `dgx/` ist die
-Wahrheit. **Vorher D2 beachten** — solange das Live-Deployment aus
-`backend/` läuft, darf dieser Branch nicht in `/home/adm-dgx/Rumis-AI-Lab`
-ausgecheckt werden.
-
----
-
-## 2. Zusammenfassung nach Dringlichkeit
+## Zusammenfassung nach Dringlichkeit
 
 | # | Thema | Bewertung |
 |---|---|---|
-| **D3/D6** | Monitoring läuft auf dem DGX, gehört aber auf den separaten Monitoring-Server. DCGM zusätzlich im Dauer-Crashloop (amd64-Image auf arm64, 152 410 Restarts) → alle drei Services abräumen | 📄 XOPpb näher am Soll |
-| **D5/D8/D9** | `--served-model-name`, LiteLLM-Modell-ID, `/v1/`-Trailing-Slash | ✅ Live richtig, XOPpb kaputt |
-| **D1** | `vllm.service` nicht installiert, Pfad im Unit falsch | ❌ beides falsch |
-| **D2** | Live-Deployment läuft aus dem Git-Working-Tree; `checkout` bricht Bind-Mounts | ⚠️ funktioniert, riskant |
-| **D4** | `VLLM_QUANTIZATION` wirkungslos, Doku behauptet FP4 | Verhalten ✅, Doku ❌ |
-| **D12** | `HF_HUB_OFFLINE` nie auf 1 gesetzt | 📄 Repo richtig |
-| **D13/D14/D16** | CUDA-Tags inkonsistent, kein Backup, falscher Test-Call in der Doku | ❌ klein |
-| **D10/D11** | Kein Host-Firewall, Monitoring ohne Auth | ✅ so vorgesehen (Palo Alto / D3) |
-| **D7** | Grafana-Dashboard-Default zeigt Llama-3-Pfad | entfällt mit D3 |
+| **D1** | Monitoring läuft auf dem DGX statt auf dem Monitoring-Server; DCGM zusätzlich im Dauer-Crashloop (152 410 Restarts) → alle drei Container abräumen | ❌ |
+| **D4/D5/D6** | `--served-model-name`, LiteLLM-Modell-ID, `/v1/`-Trailing-Slash | ✅ Live richtig, XOPpb kaputt |
+| **D2** | `vllm.service` nicht installiert, Pfad im Unit falsch | ❌ |
+| **D3** | Deployment läuft aus dem Git-Working-Tree; Checkout bricht Bind-Mounts | ⚠️ |
+| **D7** | `VLLM_QUANTIZATION` wirkungslos, Doku behauptet FP4 | Verhalten ✅, Doku ❌ |
+| **D8** | `HF_HUB_OFFLINE` nie auf 1 gesetzt | 📄 Repo richtig |
+| **D9/D10** | Transformers ohne Pin, Preflight prüft Architektur nicht | ❌ klein |
+| **D11** | Repo-Struktur mischte beide Tiers | ✅ behoben |
 
 **Nicht verändert:** Alle Feststellungen sind rein beobachtend. Es wurde kein
 Container gestoppt, keine Live-Datei editiert, keine Unit installiert und keine
-Firewall-Regel gesetzt. Insbesondere wurden die Monitoring-Container **nicht**
-entfernt, obwohl D3/D6 das empfehlen — das ist eine Betriebsentscheidung.
+Firewall-Regel gesetzt. Insbesondere laufen die Monitoring-Container weiter,
+obwohl D1 ihre Entfernung empfiehlt.

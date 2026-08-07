@@ -9,9 +9,10 @@ Der Inhalt dieses Ordners wird in einem **zweiten Schritt direkt auf der
 Webserver-VM** aus dem echt laufenden System übernommen — analog zu `dgx/`,
 das aus dem Live-Zustand des DGX Spark erzeugt wurde.
 
-Der bestehende Repo-Stand für diesen Tier liegt bis dahin unverändert im
-Repo-Root (`docker-compose.yml`, `litellm-config.yaml`, `.env.example`,
-`nginx/`) und ist **nicht** gegen das Live-System verifiziert.
+Der bisherige, **nicht** gegen das Live-System verifizierte Repo-Stand für
+diesen Tier (`docker-compose.yml`, `litellm-config.yaml`, `.env.example`,
+`nginx/`) liegt weiterhin im Branch `claude/docker-setup-guide-ARYXK` — auf
+diesem Branch ist er entfernt, damit hier nur steht, was verifiziert ist.
 
 ## Was auf der Webserver-VM zu erfassen ist
 
@@ -38,7 +39,7 @@ Konkrete Punkte:
 | SSO / Azure AD | Gesetzte OIDC-Variablen, `OPENID_REDIRECT_URI`, App-Proxy-Hostname |
 | Reverse Proxy | nginx/Caddy-Config, TLS-Zertifikate, Azure App Proxy Connector |
 | Persistenz | Docker-Volumes bzw. Bind-Mounts (Open WebUI SQLite, n8n-Daten, LiteLLM-DB) |
-| systemd | Gibt es Units, oder hängt alles an `restart: unless-stopped`? (auf dem DGX: kein systemd, siehe `dgx/DRIFT.md` D1) |
+| systemd | Gibt es Units, oder hängt alles an `restart: unless-stopped`? (auf dem DGX: kein systemd, siehe `dgx/DRIFT.md` D2) |
 | Netzwerk/Firewall | `ufw status`, offene Ports, wie erreicht die VM Port 8000 des DGX |
 | Backups | Cron/Timer für n8n- und Open-WebUI-Daten? |
 
